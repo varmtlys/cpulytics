@@ -35,11 +35,14 @@ below the work you are actually doing.
   restored immediately.
 - Shows a balloon on every change, keeps a size capped log, and puts everything back
   when it exits.
+- Settings live in a window with a hint and a tooltip per option, in seven
+  languages, following the Windows light and dark theme. One instance only.
 
 ## Build
 
-Needs MSVC (`cl` on PATH, from a Developer PowerShell) or MinGW `g++`. The script
-picks whichever it finds.
+Needs MSVC (`cl` and `rc` on PATH, from a Developer PowerShell) or MinGW `g++`
+with `windres`. The script picks whichever it finds and compiles the resources -
+the icon and the manifest - with the matching resource compiler.
 
 ```powershell
 .\scripts\build.ps1                # build\x64\cpulytics.exe
@@ -55,7 +58,9 @@ the developer prompt (`vcvars64`, `vcvarsall x86`, `vcvarsall x64_arm64`) and
 needs a multilib toolchain. An arm64 build made on an x64 machine is a cross build:
 its tests are compiled but not run there.
 
-The version is taken from `git describe`, there is no version file to bump.
+The version is taken from `git describe`, there is no version file to bump. The
+icon is generated, not committed as an opaque blob: `python tools/make_icon.py`
+redraws `res/cpulytics.ico` from the code in that script.
 
 ## Settings
 
@@ -72,29 +77,173 @@ v2 dpi awareness, so the window is themed and sharp on a scaled display.
 The same values live in `%APPDATA%\cpulytics\config.ini`, written with comments on
 first run - edit it by hand and pick "Reload settings file" in the tray menu.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `enabled` | true | master switch, also in the tray menu |
-| `sample_interval_ms` | 2000 | how often the process table is read |
-| `window_seconds` | 600 | length of the sliding window |
-| `min_history_seconds` | 120 | no decisions before the window holds this much data |
-| `demote_percent` | 20 | window average that triggers a demotion |
-| `restore_percent` | 8 | window average that earns a step back |
-| `startup_grace_seconds` | 60 | how long a fresh process is immune |
-| `action_cooldown_seconds` | 60 | minimum gap between two changes of one process |
-| `restore_after_seconds` | 120 | how long a process must stay calm before it is restored |
-| `max_steps` | 2 | 0 = off, 1 = below normal, 2 = down to idle |
-| `system_max_steps` | 1 | the same cap for session 0 processes |
-| `fullscreen_max_steps` | 0 | the same cap for fullscreen apps, 0 leaves games alone |
-| `eco_qos` | false | also mark demoted processes as low power (EcoQoS) |
-| `protect_foreground` | true | never demote the window you are using |
-| `notifications` | true | balloon on every change |
-| `restore_on_exit` | true | put everything back on shutdown |
-| `log_enabled` | true | write `cpulytics.log` next to the config |
-| `max_tracked` | 2048 | upper bound on the history map |
-| `log_max_kb` | 512 | log is truncated past this size |
-| `whitelist` | empty | comma separated executables that are never touched |
-| `language` | auto | ui language: auto, en, es, ru, zh, ja, ko, ar |
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `enabled` | true | | master switch, also in the tray menu |
+| `sample_interval_ms` | 2000 | 250 - 60000 | how often the process table is read |
+| `window_seconds` | 600 | 30 - 7200 | length of the sliding window |
+| `min_history_seconds` | 120 | 5 - window | data needed before anything is decided |
+| `demote_percent` | 20 | 1 - 100 | window average that triggers a demotion |
+| `restore_percent` | 8 | 0 - demote | window average that earns a step back |
+| `startup_grace_seconds` | 60 | 0 - 3600 | how long a fresh process is immune |
+| `action_cooldown_seconds` | 60 | 1 - 3600 | minimum gap between two changes of one process |
+| `restore_after_seconds` | 120 | 1 - 7200 | how long a process must stay calm to be restored |
+| `max_steps` | 2 | 0 - 2 | how deep a demotion may go |
+| `system_max_steps` | 1 | 0 - max_steps | the same cap for session 0 processes |
+| `fullscreen_max_steps` | 0 | 0 - max_steps | the same cap for fullscreen apps |
+| `eco_qos` | false | | also mark demoted processes as low power |
+| `protect_foreground` | true | | never demote the window you are using |
+| `notifications` | true | | balloon on every change |
+| `restore_on_exit` | true | | put everything back on shutdown |
+| `log_enabled` | true | | write `cpulytics.log` next to the config |
+| `language` | auto | | auto, en, es, ru, zh, ja, ko, ar |
+| `max_tracked` | 2048 | 64 - 65536 | upper bound on the history map |
+| `log_max_kb` | 512 | 16 - 65536 | log is truncated past this size |
+| `whitelist` | empty | | executables that are never touched |
+
+Every value is clamped into the range above when it is read, so a typo in the file
+cannot produce a setting that misbehaves - it produces the nearest sane one.
+
+### How the settings work together
+
+Once per `sample_interval_ms` the whole process table is read and each process gets
+one more point in its window. From the oldest and the newest point in the window
+comes the average CPU, as a percentage of the whole machine, where all cores busy
+is 100%.
+
+A process is demoted one step when all of this holds: the window really holds
+`min_history_seconds` of data, the process is older than `startup_grace_seconds`,
+its average is at or above `demote_percent`, `action_cooldown_seconds` have passed
+since the last change, it is not protected (critical, whitelisted, foreground), and
+its current step is below the cap that applies to it (`max_steps`,
+`system_max_steps` or `fullscreen_max_steps`).
+
+It gets a step back when the average stays at or below `restore_percent` for
+`restore_after_seconds`, and it gets everything back at once when it becomes the
+foreground window or when a cap is lowered below its current step.
+
+### Sampling
+
+**`sample_interval_ms`** - how often the process table is read. It is one syscall
+for all processes, so the cost is negligible either way; the value decides how
+finely short spikes are resolved and how many points a window holds (window divided
+by interval, which is what the history costs in memory). Lower it to 500 while
+tuning to see the numbers move, put it back afterwards.
+
+**`window_seconds`** - the heart of the whole thing. CPU usage is averaged over
+this much history, so a ten minute window ignores anything that burns the machine
+briefly and reacts only to load that keeps going. Shorten it to react faster, at
+the price of catching honest work like a build or an export; lengthen it to punish
+only chronic offenders.
+
+**`min_history_seconds`** - no decision is made until the window actually holds
+this much data. It is what keeps cpulytics quiet for the first two minutes after it
+starts, and what stops a process that appeared seconds ago from being judged on a
+handful of samples. Clamped to at most `window_seconds`.
+
+### Thresholds
+
+**`demote_percent`** - the window average at which a process gets one step down,
+in percent of the whole machine. Scale it to your cpu: on a 16 thread laptop one
+fully busy core is about 6%, so 20% means roughly three cores pinned for the entire
+window. Lower is more aggressive.
+
+**`restore_percent`** - the average below which a demoted process counts as calm.
+It must stay under `demote_percent`, and the gap between the two is the hysteresis
+that stops a process from flapping between levels; the loader forces at least half
+a percent of gap.
+
+### Timing
+
+**`startup_grace_seconds`** - a freshly started process is left alone for this
+long. Compilers, browsers, games and installers all burn cpu while they load, and
+that burst says nothing about how they will behave a minute later. The age is the
+real process creation time, not the moment cpulytics first saw it.
+
+**`action_cooldown_seconds`** - the minimum gap between two changes of the same
+process. It stops a process being walked from normal down to idle within two
+samples, and it rate limits the balloons.
+
+**`restore_after_seconds`** - how long the average has to stay under
+`restore_percent` before one step is given back. Together with the cooldown it sets
+how quickly a process that calmed down returns to normal.
+
+### How deep it goes
+
+The ladder is realtime, high, above normal, normal, below normal, idle. A demotion
+moves that many entries down from the class the process had when cpulytics first
+touched it, and never past idle. That original class is remembered and is what a
+restore puts back, so repeated demotions cannot ratchet a process downwards.
+
+**`max_steps`** - 0 turns demotion off completely and leaves a pure monitor, 1
+allows normal to below normal, 2 allows the second step down to idle.
+
+**`system_max_steps`** - the cap for processes in session 0: services, the update
+stack, Defender. The rest of the system depends on them, so by default they get the
+first gentle step and nothing more. Set it to 0 to make services untouchable.
+
+**`fullscreen_max_steps`** - the cap for apps that were ever seen owning a window
+covering a whole monitor: games, video players, presentations. The default 0 means
+immune. The mark sticks to the process for the rest of its life, so alt-tabbing out
+of a game does not silently remove its protection.
+
+### Behaviour
+
+**`eco_qos`** - additionally marks a demoted process as low power (EcoQoS): windows
+stops boosting for it and prefers efficient cores where the cpu has them. It is
+cleared together with the priority when the process is restored. Needs windows 11
+or 10 21H1; where the api is missing the demotion still happens and the flag is
+skipped. On a cpu without efficiency cores the effect is on clocks and power draw,
+not on which core the work lands.
+
+**`protect_foreground`** - the process owning the foreground window is never
+demoted, and if it is already demoted it is put back to its original class at once,
+without waiting out `restore_after_seconds`. This is what guarantees cpulytics never
+slows down the thing you are looking at.
+
+**`notifications`** - a balloon on every change, naming up to three processes and
+counting the rest. Turn it off for a completely silent app; the log still records
+every decision.
+
+**`restore_on_exit`** - restore every touched process when cpulytics exits, on the
+tray menu Exit as well as on log off and shutdown. Off leaves priorities where they
+are. Note that a hard kill cannot restore anything either way, so the next start
+after one will find processes it does not know it demoted.
+
+**`log_enabled`** - writes `cpulytics.log` next to the config: start and stop, every
+change with the old class, the new one and the average that caused it, and every
+process that refused with access denied.
+
+**`language`** - `auto` follows the windows display language, or force one of
+`en`, `es`, `ru`, `zh`, `ja`, `ko`, `ar`. Arabic mirrors the settings window.
+
+### Limits and exceptions
+
+**`max_tracked`** - hard upper bound on the history map. Entries are dropped as
+soon as a process exits, so this is only a safety net for a machine that spawns
+thousands of short lived processes; when the cap is reached the quietest untouched
+entries go first.
+
+**`log_max_kb`** - the log is truncated once it grows past this. One file, no
+rotation, nothing to clean up.
+
+**`whitelist`** - comma separated executable names that are never touched, for
+example `obs64.exe, ableton live.exe`. Case insensitive, file name only, no path.
+On top of this list there is a built in one that no setting can override: the
+kernel and session critical processes (`csrss`, `wininit`, `services`, `lsass`,
+`dwm`, `audiodg`, ...), cpulytics itself, and anything running at realtime priority.
+
+### Tuning
+
+| Symptom | Knob |
+|---|---|
+| reacts too late to a process that has been eating the cpu for minutes | shorter `window_seconds`, lower `demote_percent` |
+| demotes honest work like a build or an export | higher `demote_percent`, longer `startup_grace_seconds`, or the `whitelist` |
+| a game or a video stutters | keep `fullscreen_max_steps` at 0 and `protect_foreground` on |
+| a demoted process takes too long to come back | lower `restore_after_seconds`, higher `restore_percent` |
+| a service keeps eating cpu and one step is not enough | raise `system_max_steps` to 2 |
+| want it to watch and report only | `max_steps` = 0 |
+| want less battery drain from background work | `eco_qos` = true |
 
 ## Tests
 
@@ -106,8 +255,9 @@ protection.
 burns a core, runs the real sampler and engine over the real process table, and
 checks that the child is demoted to below normal and restored to normal once it
 goes quiet. It also checks that an exited process leaves nothing behind in memory,
-that the embedded icon decodes, and that every interface string exists in every
-language.
+that the icon resource is linked in every size, that EcoQoS survives a round trip,
+that the theme palette and the dpi query answer, and that every interface string
+exists in every language.
 
 ## Releases
 
