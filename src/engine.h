@@ -52,7 +52,8 @@ public:
 
     // Feeds one sample of the whole process table. now is a monotonic millisecond
     // clock, foreground_pid may be 0. Returns the changes the host should apply.
-    std::vector<Action> update(uint64_t now, const std::vector<ProcInfo>& procs, uint32_t foreground_pid);
+    std::vector<Action> update(uint64_t now, const std::vector<ProcInfo>& procs, uint32_t foreground_pid,
+                               uint32_t fullscreen_pid = 0);
 
     // Host feedback. orig_class is remembered on the first successful demotion so
     // the process can be put back exactly where it was.
@@ -68,6 +69,7 @@ public:
     uint32_t orig_class(uint32_t pid) const;
 
     std::vector<Usage> top(size_t n) const;
+    bool is_fullscreen(uint32_t pid) const;
     size_t tracked() const { return procs_.size(); }
 
 private:
@@ -81,6 +83,7 @@ private:
         std::wstring name;
         bool system = false;
         bool critical = false;
+        bool fullscreen = false;  // seen owning a fullscreen window at least once
         int step = 0;
         uint32_t orig_class = 0;
         uint64_t last_action = 0;

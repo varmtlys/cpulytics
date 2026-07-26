@@ -29,7 +29,15 @@ bool Engine::whitelisted(const std::wstring& name) const {
 }
 
 int Engine::max_steps_for(const Track& t) const {
-    return t.system ? std::min(cfg_.system_max_steps, cfg_.max_steps) : cfg_.max_steps;
+    // A game owns the screen, so its cap wins over the system one it can never have.
+    if (t.fullscreen) return std::min(cfg_.fullscreen_max_steps, cfg_.max_steps);
+    if (t.system) return std::min(cfg_.system_max_steps, cfg_.max_steps);
+    return cfg_.max_steps;
+}
+
+bool Engine::is_fullscreen(uint32_t pid) const {
+    auto it = procs_.find(pid);
+    return it != procs_.end() && it->second.fullscreen;
 }
 
 double Engine::window_percent(const Track& t) const {
@@ -41,7 +49,8 @@ double Engine::window_percent(const Track& t) const {
     return 100.0 * busy_ms / ((double)dt * (double)cpus_);
 }
 
-std::vector<Action> Engine::update(uint64_t now, const std::vector<ProcInfo>& procs, uint32_t foreground_pid) {
+std::vector<Action> Engine::update(uint64_t now, const std::vector<ProcInfo>& procs, uint32_t foreground_pid,
+                                   uint32_t fullscreen_pid) {
     const uint64_t win_ms = (uint64_t)cfg_.window_seconds * 1000;
 
     for (const ProcInfo& p : procs) {
@@ -56,6 +65,9 @@ std::vector<Action> Engine::update(uint64_t now, const std::vector<ProcInfo>& pr
         t.critical = p.critical;
         t.last_seen = now;
         t.age_ms = p.age_ms;
+        // Sticky: a game stays a game after alt-tab, when its window is no longer
+        // the one covering the screen.
+        if (fullscreen_pid && p.pid == fullscreen_pid) t.fullscreen = true;
         // A CPU counter can only grow; anything else means we are looking at
         // another process, so the history is dropped rather than trusted.
         if (!t.hist.empty() && (p.cpu_time < t.hist.back().cpu || now < t.hist.back().t)) t.hist.clear();
@@ -113,6 +125,13 @@ std::vector<Action> Engine::update(uint64_t now, const std::vector<ProcInfo>& pr
         }
 
         const bool cooled = now - t.last_action >= cooldown_ms;
+
+        // The cap can be lowered while a process is already demoted (settings
+        // changed, or it just went fullscreen): give the steps back immediately.
+        if (t.step > max_steps_for(t)) {
+            out.push_back({ActionKind::Restore, pid, t.name, t.step, max_steps_for(t), t.percent, t.system});
+            continue;
+        }
 
         if (t.step > 0 && t.calm_since && now - t.calm_since >= calm_ms && cooled) {
             out.push_back({ActionKind::Restore, pid, t.name, t.step, t.step - 1, t.percent, t.system});

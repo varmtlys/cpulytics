@@ -24,6 +24,7 @@ struct Config {
     // how deep we are allowed to go: 1 = below normal, 2 = idle
     int max_steps = 2;
     int system_max_steps = 1;        // system processes get one gentle step at most
+    int fullscreen_max_steps = 0;    // fullscreen apps (games): 0 = immune
 
     // behaviour
     bool enabled = true;             // master switch, toggled from the tray menu

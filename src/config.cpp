@@ -70,6 +70,7 @@ void Config::sanitize() {
     clamp_to(restore_after_seconds, 1, 7200);
     clamp_to(max_steps, 0, 2);
     clamp_to(system_max_steps, 0, max_steps);
+    clamp_to(fullscreen_max_steps, 0, max_steps);
     clamp_to(max_tracked, 64, 65536);
     clamp_to(log_max_kb, 16, 65536);
 }
@@ -101,6 +102,7 @@ Config Config::load() {
         else if (k == "restore_after_seconds") c.restore_after_seconds = as_int(v, c.restore_after_seconds);
         else if (k == "max_steps") c.max_steps = as_int(v, c.max_steps);
         else if (k == "system_max_steps") c.system_max_steps = as_int(v, c.system_max_steps);
+        else if (k == "fullscreen_max_steps") c.fullscreen_max_steps = as_int(v, c.fullscreen_max_steps);
         else if (k == "enabled") c.enabled = as_bool(v, c.enabled);
         else if (k == "protect_foreground") c.protect_foreground = as_bool(v, c.protect_foreground);
         else if (k == "notifications") c.notifications = as_bool(v, c.notifications);
@@ -156,7 +158,9 @@ bool Config::save() const {
         << "; demotion depth: 0 = off, 1 = below normal, 2 = down to idle\n"
         << "max_steps = " << max_steps << "\n"
         << "; same, for system processes - they are never pushed harder than this\n"
-        << "system_max_steps = " << system_max_steps << "\n\n"
+        << "system_max_steps = " << system_max_steps << "\n"
+        << "; same, for apps seen running fullscreen (games): 0 leaves them untouched\n"
+        << "fullscreen_max_steps = " << fullscreen_max_steps << "\n\n"
         << "; never demote the process that owns the foreground window\n"
         << "protect_foreground = " << (protect_foreground ? "true" : "false") << "\n"
         << "; show a balloon on every change\n"

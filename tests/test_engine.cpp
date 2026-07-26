@@ -58,22 +58,23 @@ struct Sim {
     }
 
     // One sample where every process burned `percent` of the whole machine.
-    std::vector<Action> tick(const std::vector<double>& percent, uint32_t fg = 0, bool auto_apply = true) {
+    std::vector<Action> tick(const std::vector<double>& percent, uint32_t fg = 0, uint32_t fs = 0,
+                             bool auto_apply = true) {
         now += (uint64_t)interval;
         for (size_t i = 0; i < procs.size(); ++i) {
             procs[i].cpu_time += (uint64_t)(percent[i] / 100.0 * interval * kCpus * 10000.0);
             procs[i].age_ms += (uint64_t)interval;
         }
-        auto acts = eng.update(now, procs, fg);
+        auto acts = eng.update(now, procs, fg, fs);
         if (auto_apply)
             for (const Action& a : acts) eng.applied(a.pid, a.to_step, kNormal);
         return acts;
     }
 
-    std::vector<Action> run(int ticks, const std::vector<double>& percent, uint32_t fg = 0) {
+    std::vector<Action> run(int ticks, const std::vector<double>& percent, uint32_t fg = 0, uint32_t fs = 0) {
         std::vector<Action> all;
         for (int i = 0; i < ticks; ++i) {
-            auto acts = tick(percent, fg);
+            auto acts = tick(percent, fg, fs);
             all.insert(all.end(), acts.begin(), acts.end());
         }
         return all;
@@ -168,6 +169,44 @@ void test_foreground_is_protected_and_restored_at_once() {
     CHECK(back[0].to_step == 0);
 }
 
+void test_fullscreen_app_is_immune_by_default() {
+    Sim s(base_config());  // fullscreen_max_steps defaults to 0
+    s.add(1000, L"game.exe");
+    CHECK(s.run(60, {90.0}, 0, 1000).empty());
+    CHECK(s.eng.is_fullscreen(1000));
+
+    // Still immune after alt-tab: the flag sticks to the process.
+    CHECK(s.run(30, {90.0}).empty());
+}
+
+void test_fullscreen_app_can_be_demoted_when_allowed() {
+    Config c = base_config();
+    c.fullscreen_max_steps = 1;
+    Sim s(c);
+    s.add(1000, L"game.exe");
+    auto acts = s.run(60, {90.0}, 0, 1000);
+    int demotions = 0;
+    for (const Action& a : acts)
+        if (a.kind == ActionKind::Demote) ++demotions;
+    CHECK(demotions == 1);  // one step, not two
+    CHECK(s.eng.top(1)[0].step == 1);
+}
+
+void test_lowering_the_cap_restores_immediately() {
+    Config c = base_config();
+    c.fullscreen_max_steps = 2;
+    Sim s(c);
+    s.add(1000, L"game.exe");
+    s.run(40, {90.0}, 0, 1000);
+    CHECK(s.eng.top(1)[0].step == 2);
+
+    c.fullscreen_max_steps = 0;  // user changed the setting
+    s.eng.set_config(c);
+    auto acts = s.run(2, {90.0});
+    CHECK(!acts.empty() && acts[0].kind == ActionKind::Restore);
+    CHECK(s.eng.top(1)[0].step == 0);
+}
+
 void test_dead_processes_are_forgotten() {
     Sim s(base_config());
     s.add(1000, L"hog.exe");
@@ -231,6 +270,9 @@ int main() {
     test_critical_and_whitelisted_are_untouchable();
     test_calm_process_gets_priority_back();
     test_foreground_is_protected_and_restored_at_once();
+    test_fullscreen_app_is_immune_by_default();
+    test_fullscreen_app_can_be_demoted_when_allowed();
+    test_lowering_the_cap_restores_immediately();
     test_dead_processes_are_forgotten();
     test_recycled_pid_starts_from_scratch();
     test_disabled_engine_does_nothing();
