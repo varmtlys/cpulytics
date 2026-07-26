@@ -17,6 +17,8 @@ jobs:
             msvc: amd64
           - arch: x86
             msvc: x86
+          - arch: arm64
+            msvc: amd64_arm64  # cross build, its tests are compiled but not run
     steps:
       - uses: actions/checkout@v4
         with:

@@ -31,11 +31,18 @@ jobs:
         shell: pwsh
         run: .\scripts\build.ps1 -Arch x86 -Test
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - name: Build arm64
+        shell: pwsh
+        run: .\scripts\build.ps1 -Arch arm64 -Test  # cross build, the tests only compile here
+
       - name: Package
         shell: pwsh
         run: |
           $tag = '${{ github.ref_name }}'
-          foreach ($arch in 'x64', 'x86') {
+          foreach ($arch in 'x64', 'x86', 'arm64') {
             New-Item -ItemType Directory -Force "dist\$arch" | Out-Null
             Copy-Item "build\$arch\cpulytics.exe", README.md "dist\$arch\"
             Compress-Archive -Path "dist\$arch\*" -DestinationPath "cpulytics-$tag-windows-$arch.zip"
@@ -47,8 +54,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $ghArgs = @('release', 'create', $tag, "cpulytics-$tag-windows-x64.zip",
-                      "cpulytics-$tag-windows-x86.zip", '--title', $tag)
+          $zips = 'x64', 'x86', 'arm64' | ForEach-Object { "cpulytics-$tag-windows-$_.zip" }
+          $ghArgs = @('release', 'create', $tag) + $zips + @('--title', $tag)
           if (Test-Path RELEASE_NOTES.md) { $ghArgs += @('--notes-file', 'RELEASE_NOTES.md') }
           else { $ghArgs += '--generate-notes' }
           gh @ghArgs
