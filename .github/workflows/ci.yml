@@ -9,18 +9,28 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            msvc: amd64
+          - arch: x86
+            msvc: x86
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # build.ps1 takes the version from git describe
 
       - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
 
       - name: Build and test
         shell: pwsh
-        run: .\scripts\build.ps1 -Test
+        run: .\scripts\build.ps1 -Arch ${{ matrix.arch }} -Test
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cpulytics-${{ github.sha }}
-          path: build/cpulytics.exe
+          name: cpulytics-${{ matrix.arch }}-${{ github.sha }}
+          path: build/${{ matrix.arch }}/cpulytics.exe

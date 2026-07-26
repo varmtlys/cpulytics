@@ -35,10 +35,15 @@ Needs MSVC (`cl` on PATH, from a Developer PowerShell) or MinGW `g++`. The scrip
 picks whichever it finds.
 
 ```powershell
-.\scripts\build.ps1          # build\cpulytics.exe
-.\scripts\build.ps1 -Test    # build, then run both test suites
-.\scripts\build.ps1 -Run     # build and start it
+.\scripts\build.ps1                # build\x64\cpulytics.exe
+.\scripts\build.ps1 -Arch x86      # build\x86\cpulytics.exe
+.\scripts\build.ps1 -Test          # build, then run both test suites
+.\scripts\build.ps1 -Run           # build and start it
 ```
+
+Both architectures are built and released. With MSVC the architecture comes from
+the developer prompt (`vcvars64`, or `vcvarsall x86`) and `-Arch` has to agree with
+it; with g++ it is `-m64` / `-m32`, so the 32 bit build needs a multilib toolchain.
 
 The version is taken from `git describe`, there is no version file to bump.
 
@@ -82,8 +87,9 @@ and that the embedded icon decodes.
 ## Releases
 
 Versions are git tags: `vMAJOR.MINOR` for features, `vMAJOR.MINOR.PATCH` for fixes.
-Pushing a tag runs `.github/workflows/release.yml`, which builds, tests, packages
-`cpulytics-<tag>-windows-x64.zip` and publishes a release with `RELEASE_NOTES.md`
+Pushing a tag runs `.github/workflows/release.yml`, which builds and tests both
+architectures, packages `cpulytics-<tag>-windows-x64.zip` and
+`cpulytics-<tag>-windows-x86.zip`, and publishes a release with `RELEASE_NOTES.md`
 as its body.
 
 ## Notes

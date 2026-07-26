@@ -18,18 +18,28 @@ jobs:
           fetch-depth: 0
 
       - uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Build and test
+        with:
+          arch: amd64
+      - name: Build and test x64
         shell: pwsh
-        run: .\scripts\build.ps1 -Test
+        run: .\scripts\build.ps1 -Arch x64 -Test
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Build and test x86
+        shell: pwsh
+        run: .\scripts\build.ps1 -Arch x86 -Test
 
       - name: Package
         shell: pwsh
         run: |
           $tag = '${{ github.ref_name }}'
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build\cpulytics.exe, README.md dist\
-          Compress-Archive -Path dist\* -DestinationPath "cpulytics-$tag-windows-x64.zip"
+          foreach ($arch in 'x64', 'x86') {
+            New-Item -ItemType Directory -Force "dist\$arch" | Out-Null
+            Copy-Item "build\$arch\cpulytics.exe", README.md "dist\$arch\"
+            Compress-Archive -Path "dist\$arch\*" -DestinationPath "cpulytics-$tag-windows-$arch.zip"
+          }
 
       - name: Publish
         shell: pwsh
@@ -37,7 +47,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $ghArgs = @('release', 'create', $tag, "cpulytics-$tag-windows-x64.zip", '--title', $tag)
+          $ghArgs = @('release', 'create', $tag, "cpulytics-$tag-windows-x64.zip",
+                      "cpulytics-$tag-windows-x86.zip", '--title', $tag)
           if (Test-Path RELEASE_NOTES.md) { $ghArgs += @('--notes-file', 'RELEASE_NOTES.md') }
           else { $ghArgs += '--generate-notes' }
           gh @ghArgs
