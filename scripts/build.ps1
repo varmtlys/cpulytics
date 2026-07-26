@@ -49,7 +49,7 @@ $canRun = ($Arch -ne 'arm64') -or ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64')
 
 function Invoke-Tool($exe, $argList) {
     & $exe @argList
-    if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE`n  $exe $($argList -join ' ')" }
 }
 
 # The icon and the manifest, compiled once per build and linked into every binary
