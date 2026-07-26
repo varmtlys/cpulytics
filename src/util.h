@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cstdint>
+#include <cwctype>
 #include <string>
 
 namespace cpulytics {

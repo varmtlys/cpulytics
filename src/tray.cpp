@@ -10,6 +10,7 @@
 #include "config.h"
 #include "engine.h"
 #include "icon.h"
+#include "settings.h"
 #include "sysinfo.h"
 #include "util.h"
 
@@ -35,6 +36,7 @@ constexpr UINT kIdRestoreAll = 102;
 constexpr UINT kIdSettings = 103;
 constexpr UINT kIdReload = 104;
 constexpr UINT kIdLog = 105;
+constexpr UINT kIdElevate = 106;
 constexpr size_t kTopRows = 6;
 
 std::wstring log_path() {
@@ -97,8 +99,11 @@ private:
     void set_tip();
     void add_icon();
     void reload_config();
+    void open_settings();
+    void restart_elevated();
     void restore_all();
 
+    HINSTANCE inst_ = nullptr;
     HWND hwnd_ = nullptr;
     NOTIFYICONDATAW nid_{};
     HICON icon_ = nullptr;
@@ -129,6 +134,7 @@ void App::add_icon() {
 }
 
 bool App::init(HINSTANCE inst) {
+    inst_ = inst;
     cfg_ = Config::load();
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_ = std::make_unique<Engine>(cfg_);
@@ -177,17 +183,45 @@ void App::reload_config() {
     log_.write(L"settings reloaded");
 }
 
+// Settings live in their own window; the sampling timer keeps running behind it.
+void App::open_settings() {
+    if (!show_settings(inst_, cfg_)) return;
+    engine_->set_config(cfg_);
+    log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
+    KillTimer(hwnd_, kTimerId);
+    SetTimer(hwnd_, kTimerId, (UINT)cfg_.sample_interval_ms, nullptr);
+    if (!cfg_.enabled) restore_all();
+    log_.write(L"settings saved");
+    set_tip();
+}
+
+// Processes of other users, services and elevated programs cannot be touched
+// without elevation. Restarting through the shell is the only way to ask for it.
+void App::restart_elevated() {
+    wchar_t exe[MAX_PATH];
+    if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) return;
+    if (cfg_.restore_on_exit) restore_all();
+    SHELLEXECUTEINFOW si{};
+    si.cbSize = sizeof(si);
+    si.lpVerb = L"runas";
+    si.lpFile = exe;
+    si.nShow = SW_SHOW;
+    if (ShellExecuteExW(&si)) {
+        if (si.hProcess) CloseHandle(si.hProcess);
+        DestroyWindow(hwnd_);  // the elevated copy takes over
+    }
+}
+
 void App::apply(const Action& a, std::wstring& summary, int& count) {
     const bool demote = a.kind == ActionKind::Demote;
     // The class the process had before we ever touched it is the only safe base:
     // reading the current one would ratchet the process down step after step.
     const uint32_t orig = a.from_step > 0 ? engine_->orig_class(a.pid) : sys::priority_class(a.pid);
-    if (!orig) {
-        engine_->failed(a.pid);
-        return;
-    }
-    if (!sys::apply_step(a.pid, orig, a.to_step)) {
-        engine_->failed(a.pid);
+    if (!orig || !sys::apply_step(a.pid, orig, a.to_step)) {
+        const DWORD err = GetLastError();
+        engine_->failed(a.pid);  // out of reach, stop trying until it restarts
+        if (err == ERROR_ACCESS_DENIED)
+            log_.write(a.name + L" (pid " + std::to_wstring(a.pid) + L"): access denied, needs elevation");
         return;
     }
     engine_->applied(a.pid, a.to_step, orig);
@@ -207,7 +241,7 @@ void App::apply(const Action& a, std::wstring& summary, int& count) {
 
 void App::tick() {
     if (!sampler_.sample(procs_)) return;
-    const auto actions = engine_->update(now_ms(), procs_, sys::foreground_pid());
+    const auto actions = engine_->update(now_ms(), procs_, sys::foreground_pid(), sys::fullscreen_pid());
 
     std::wstring summary;
     int count = 0, demotions = 0;
@@ -248,20 +282,24 @@ void App::show_menu() {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
 
-    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"cpulytics " CPULYTICS_VERSION_W);
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0,
+                sys::is_elevated() ? L"cpulytics " CPULYTICS_VERSION_W L" (administrator)"
+                                   : L"cpulytics " CPULYTICS_VERSION_W);
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     for (const Usage& u : engine_->top(kTopRows)) {
         wchar_t row[160];
         wsprintfW(row, L"%s  %u%%%s", u.name.c_str(), (unsigned)(u.percent + 0.5),
-                  u.step ? (u.step > 1 ? L"  [idle]" : L"  [lowered]") : L"");
+                  u.step ? (u.step > 1 ? L"  [idle]" : L"  [lowered]")
+                         : (engine_->is_fullscreen(u.pid) ? L"  [fullscreen]" : L""));
         AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, row);
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (cfg_.enabled ? MF_CHECKED : 0), kIdEnabled, L"Managing priorities");
     AppendMenuW(menu, MF_STRING, kIdRestoreAll, L"Restore all now");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kIdSettings, L"Open settings");
-    AppendMenuW(menu, MF_STRING, kIdReload, L"Reload settings");
+    AppendMenuW(menu, MF_STRING, kIdSettings, L"Settings...");
+    AppendMenuW(menu, MF_STRING, kIdReload, L"Reload settings file");
+    if (!sys::is_elevated()) AppendMenuW(menu, MF_STRING, kIdElevate, L"Restart as administrator");
     AppendMenuW(menu, MF_STRING, kIdLog, L"Open log");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kIdExit, L"Exit");
@@ -294,7 +332,8 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     set_tip();
                     break;
                 case kIdRestoreAll: restore_all(); break;
-                case kIdSettings: ShellExecuteW(nullptr, L"open", Config::path().c_str(), nullptr, nullptr, SW_SHOW); break;
+                case kIdSettings: open_settings(); break;
+                case kIdElevate: restart_elevated(); break;
                 case kIdReload: reload_config(); break;
                 case kIdLog: ShellExecuteW(nullptr, L"open", log_path().c_str(), nullptr, nullptr, SW_SHOW); break;
                 case kIdExit: DestroyWindow(hwnd); break;
