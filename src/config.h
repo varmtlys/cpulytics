@@ -32,6 +32,8 @@ struct Config {
     bool notifications = true;       // balloon on every change
     bool restore_on_exit = true;     // put every touched process back on shutdown
     bool log_enabled = true;
+    // ui language: auto, en, es, ru, zh, ja, ko, ar
+    std::wstring language = L"auto";
 
     // safety limits
     int max_tracked = 2048;          // hard cap on the history map

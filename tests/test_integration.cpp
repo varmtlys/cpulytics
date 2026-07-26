@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "config.h"
+#include "i18n.h"
 #include "icon.h"
 #include "engine.h"
 #include "sysinfo.h"
@@ -153,6 +154,27 @@ void test_embedded_icon_decodes() {
     }
 }
 
+// A missing row in the string table would silently fall back to nothing, so every
+// id is checked in every language.
+void test_every_string_is_translated() {
+    for (const wchar_t* const* code = language_codes(); *code; ++code) {
+        set_language(*code);
+        for (int id = 0; id < S_COUNT; ++id) {
+            const wchar_t* s = tr((Str)id);
+            if (!s || !*s) {
+                std::printf("FAIL empty string id %d for language %ls\n", id, *code);
+                ++g_failed;
+            }
+        }
+    }
+    set_language(L"ar");
+    CHECK(rtl());
+    set_language(L"en");
+    CHECK(!rtl());
+    set_language(L"nonsense");  // unknown codes fall back to english
+    CHECK(std::wstring(tr(S_SAVE)) == L"Save");
+}
+
 void test_hog_is_demoted_then_restored() {
     Child child;
     if (!spawn(child)) {
@@ -225,6 +247,7 @@ int main(int argc, char** argv) {
     test_sampler_sees_this_process();
     test_priority_ladder();
     test_embedded_icon_decodes();
+    test_every_string_is_translated();
     test_hog_is_demoted_then_restored();
     test_exited_process_leaves_no_trace();
 

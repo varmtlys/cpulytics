@@ -55,9 +55,9 @@ function Invoke-Tool($exe, $argList) {
 function Build-Exe($outName, $sources, $gui) {
     $out = Join-Path $build $outName
     if ($useMsvc) {
-        $a = @('/nologo', '/std:c++17', '/EHsc', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', '/DNOMINMAX',
+        $a = @('/nologo', '/std:c++17', '/EHsc', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', '/DNOMINMAX', '/utf-8',
                "/I$build", "/I$root\src", "/Fo:$build\", "/Fe:$out") + $sources +
-             @('/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'advapi32.lib')
+             @('/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'comctl32.lib', 'advapi32.lib')
         if ($gui) { $a += '/SUBSYSTEM:WINDOWS' }
         $a += switch ($Arch) { 'x86' { '/MACHINE:X86' } 'arm64' { '/MACHINE:ARM64' } default { '/MACHINE:X64' } }
         Invoke-Tool 'cl' $a
@@ -65,7 +65,7 @@ function Build-Exe($outName, $sources, $gui) {
         $a = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-DNOMINMAX', '-DUNICODE', '-D_UNICODE',
                '-static', '-static-libgcc',
                '-static-libstdc++', '-s', "-I$build", "-I$root\src", '-o', $out) + $sources +
-             @('-lshell32', '-luser32', '-lgdi32', '-ladvapi32')
+             @('-lshell32', '-luser32', '-lgdi32', '-lcomctl32', '-ladvapi32')
         if ($Arch -eq 'x86') { $a += '-m32' } elseif ($Arch -eq 'x64') { $a += '-m64' }
         if ($gui) { $a += @('-mwindows', '-municode') }
         Invoke-Tool 'g++' $a

@@ -1,9 +1,12 @@
 #include "settings.h"
 
+#include <commctrl.h>
+
 #include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "i18n.h"
 #include "util.h"
 
 namespace cpulytics {
@@ -14,44 +17,47 @@ namespace {
 enum class Kind { Int, Real, Bool, Text };
 
 struct Field {
-    const wchar_t* label;
-    const wchar_t* hint;
+    Str label;
+    Str hint;
     Kind kind;
     void* ptr;
+    const wchar_t* range;     // shown in the tooltip, matches Config::sanitize
+    const wchar_t* fallback;  // the default value, also for the tooltip
 };
 
 std::vector<Field> fields_of(Config& c) {
     return {
-        {L"Manage priorities", L"master switch", Kind::Bool, &c.enabled},
-        {L"Sample interval", L"ms between reads of the process table", Kind::Int, &c.sample_interval_ms},
-        {L"Window", L"seconds of history the average is taken over", Kind::Int, &c.window_seconds},
-        {L"Minimum history", L"seconds of data before anything is decided", Kind::Int, &c.min_history_seconds},
-        {L"Demote above", L"% of all cores, averaged over the window", Kind::Real, &c.demote_percent},
-        {L"Restore below", L"% of all cores, must stay under the demote level", Kind::Real, &c.restore_percent},
-        {L"Startup grace", L"seconds a freshly started process is left alone", Kind::Int, &c.startup_grace_seconds},
-        {L"Cooldown", L"seconds between two changes of one process", Kind::Int, &c.action_cooldown_seconds},
-        {L"Calm for", L"seconds of quiet before a step is given back", Kind::Int, &c.restore_after_seconds},
-        {L"Steps down", L"0 off, 1 below normal, 2 down to idle", Kind::Int, &c.max_steps},
-        {L"Steps for system", L"same cap for session 0 processes", Kind::Int, &c.system_max_steps},
-        {L"Steps for fullscreen", L"games and players: 0 leaves them untouched", Kind::Int, &c.fullscreen_max_steps},
-        {L"Protect foreground", L"never demote the window you are using", Kind::Bool, &c.protect_foreground},
-        {L"Notifications", L"balloon on every change", Kind::Bool, &c.notifications},
-        {L"Restore on exit", L"put everything back when cpulytics stops", Kind::Bool, &c.restore_on_exit},
-        {L"Write log", L"cpulytics.log next to the settings file", Kind::Bool, &c.log_enabled},
-        {L"Max tracked", L"upper bound on the history map", Kind::Int, &c.max_tracked},
-        {L"Log size", L"KB, the log is truncated past this", Kind::Int, &c.log_max_kb},
-        {L"Never touch", L"executable names, comma separated", Kind::Text, &c.whitelist},
+        {S_L_ENABLED, S_H_ENABLED, Kind::Bool, &c.enabled, nullptr, nullptr},
+        {S_L_INTERVAL, S_H_INTERVAL, Kind::Int, &c.sample_interval_ms, L"250 - 60000", L"2000"},
+        {S_L_WINDOW, S_H_WINDOW, Kind::Int, &c.window_seconds, L"30 - 7200", L"600"},
+        {S_L_MINHIST, S_H_MINHIST, Kind::Int, &c.min_history_seconds, L"5 - 7200", L"120"},
+        {S_L_DEMOTE, S_H_DEMOTE, Kind::Real, &c.demote_percent, L"1 - 100", L"20"},
+        {S_L_RESTORE, S_H_RESTORE, Kind::Real, &c.restore_percent, L"0 - 99.5", L"8"},
+        {S_L_GRACE, S_H_GRACE, Kind::Int, &c.startup_grace_seconds, L"0 - 3600", L"60"},
+        {S_L_COOLDOWN, S_H_COOLDOWN, Kind::Int, &c.action_cooldown_seconds, L"1 - 3600", L"60"},
+        {S_L_CALM, S_H_CALM, Kind::Int, &c.restore_after_seconds, L"1 - 7200", L"120"},
+        {S_L_STEPS, S_H_STEPS, Kind::Int, &c.max_steps, L"0 - 2", L"2"},
+        {S_L_SYSSTEPS, S_H_SYSSTEPS, Kind::Int, &c.system_max_steps, L"0 - 2", L"1"},
+        {S_L_FSSTEPS, S_H_FSSTEPS, Kind::Int, &c.fullscreen_max_steps, L"0 - 2", L"0"},
+        {S_L_FOREGROUND, S_H_FOREGROUND, Kind::Bool, &c.protect_foreground, nullptr, nullptr},
+        {S_L_NOTIFY, S_H_NOTIFY, Kind::Bool, &c.notifications, nullptr, nullptr},
+        {S_L_RESTORE_EXIT, S_H_RESTORE_EXIT, Kind::Bool, &c.restore_on_exit, nullptr, nullptr},
+        {S_L_LOG, S_H_LOG, Kind::Bool, &c.log_enabled, nullptr, nullptr},
+        {S_L_TRACKED, S_H_TRACKED, Kind::Int, &c.max_tracked, L"64 - 65536", L"2048"},
+        {S_L_LOGSIZE, S_H_LOGSIZE, Kind::Int, &c.log_max_kb, L"16 - 65536", L"512"},
+        {S_L_WHITELIST, S_H_WHITELIST, Kind::Text, &c.whitelist, nullptr, nullptr},
     };
 }
 
 constexpr int kRowH = 26;
-constexpr int kLabelW = 130;
+constexpr int kLabelW = 170;
 constexpr int kCtrlW = 90;
 constexpr int kHintX = kLabelW + kCtrlW + 24;
-constexpr int kWidth = 580;
+constexpr int kWidth = 660;
 constexpr int kIdFirst = 1000;
-constexpr int kIdSave = IDOK;          // Enter saves
-constexpr int kIdCancel = IDCANCEL;    // Escape closes
+constexpr int kIdLang = 900;
+constexpr int kIdSave = IDOK;        // Enter saves
+constexpr int kIdCancel = IDCANCEL;  // Escape closes
 constexpr int kIdDefaults = 3;
 
 std::wstring field_text(const Field& f) {
@@ -81,7 +87,10 @@ struct State {
     Config cfg;
     std::vector<Field> fields;
     std::vector<HWND> ctrl;
+    std::vector<std::wstring> tips;  // the tooltip control keeps pointers into these
+    HWND tooltip = nullptr;
     bool saved = false;
+    bool relaunch = false;  // language changed, build the window again
     HFONT font = nullptr;
 };
 
@@ -133,37 +142,77 @@ void read_controls(State* st) {
     st->cfg.sanitize();
 }
 
+void add_tip(State* st, HWND ctrl, HWND owner, const std::wstring& text) {
+    if (!st->tooltip || text.empty()) return;
+    st->tips.push_back(text);
+    TOOLINFOW ti{};
+    ti.cbSize = sizeof(ti);
+    ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    ti.hwnd = owner;
+    ti.uId = (UINT_PTR)ctrl;
+    ti.lpszText = (LPWSTR)st->tips.back().c_str();
+    SendMessageW(st->tooltip, TTM_ADDTOOL, 0, (LPARAM)&ti);
+}
+
 void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
     const int count = (int)st->fields.size();
     st->ctrl.assign(st->fields.size(), nullptr);
+    st->tips.clear();
+    st->tips.reserve(st->fields.size() + 1);
+
+    st->tooltip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0, 0,
+                                  hwnd, nullptr, inst, nullptr);
+    SendMessageW(st->tooltip, TTM_SETMAXTIPWIDTH, 0, 420);  // also enables the line break
+    SendMessageW(st->tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP, 20000);
+
+    // Language picker on the first row: changing it rebuilds the window.
+    CreateWindowExW(0, L"STATIC", tr(S_LANGUAGE), WS_CHILD | WS_VISIBLE | SS_RIGHT, 8, 16, kLabelW, 18, hwnd, nullptr,
+                    inst, nullptr);
+    HWND combo = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+                                 kLabelW + 14, 12, 180, 280, hwnd, (HMENU)(INT_PTR)kIdLang, inst, nullptr);
+    const wchar_t* const* codes = language_codes();
+    int selected = 0;
+    for (int i = 0; codes[i]; ++i) {
+        SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)language_name((size_t)i));
+        if (st->cfg.language == codes[i]) selected = i;
+    }
+    SendMessageW(combo, CB_SETCURSEL, selected, 0);
 
     for (int i = 0; i < count; ++i) {
         const Field& f = st->fields[i];
-        const int y = 12 + i * kRowH;
+        const int y = 12 + (i + 1) * kRowH + 8;
         const bool wide = f.kind == Kind::Text;
         const HMENU id = (HMENU)(INT_PTR)(kIdFirst + i);
 
         if (f.kind == Kind::Bool) {
-            st->ctrl[i] = CreateWindowExW(0, L"BUTTON", f.label, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                                          14, y + 2, kLabelW + kCtrlW, 20, hwnd, id, inst, nullptr);
+            st->ctrl[i] =
+                CreateWindowExW(0, L"BUTTON", tr(f.label), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 14,
+                                y + 2, kLabelW + kCtrlW, 20, hwnd, id, inst, nullptr);
         } else {
-            CreateWindowExW(0, L"STATIC", f.label, WS_CHILD | WS_VISIBLE | SS_RIGHT, 8, y + 4, kLabelW, 18, hwnd,
+            CreateWindowExW(0, L"STATIC", tr(f.label), WS_CHILD | WS_VISIBLE | SS_RIGHT, 8, y + 4, kLabelW, 18, hwnd,
                             nullptr, inst, nullptr);
             st->ctrl[i] = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                           WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, kLabelW + 14, y,
                                           wide ? kWidth - kLabelW - 44 : kCtrlW, 22, hwnd, id, inst, nullptr);
         }
         if (!wide)
-            CreateWindowExW(0, L"STATIC", f.hint, WS_CHILD | WS_VISIBLE, kHintX, y + 4, kWidth - kHintX - 16, 18, hwnd,
-                            nullptr, inst, nullptr);
+            CreateWindowExW(0, L"STATIC", tr(f.hint), WS_CHILD | WS_VISIBLE, kHintX, y + 4, kWidth - kHintX - 16, 18,
+                            hwnd, nullptr, inst, nullptr);
+
+        // Hovering a control repeats the hint and adds the range and the default,
+        // which the single line next to it has no room for.
+        std::wstring tip = tr(f.hint);
+        if (f.range)
+            tip += std::wstring(L"\n") + tr(S_RANGE) + L": " + f.range + L"    " + tr(S_DEFAULT) + L": " + f.fallback;
+        add_tip(st, st->ctrl[i], hwnd, tip);
     }
 
-    const int by = 12 + count * kRowH + 16;
-    CreateWindowExW(0, L"BUTTON", L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, kWidth - 216, by, 92,
-                    26, hwnd, (HMENU)(INT_PTR)kIdSave, inst, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, kWidth - 116, by, 92, 26, hwnd,
+    const int by = 12 + (count + 1) * kRowH + 8 + 16;
+    CreateWindowExW(0, L"BUTTON", tr(S_SAVE), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, kWidth - 236, by,
+                    100, 26, hwnd, (HMENU)(INT_PTR)kIdSave, inst, nullptr);
+    CreateWindowExW(0, L"BUTTON", tr(S_CANCEL), WS_CHILD | WS_VISIBLE | WS_TABSTOP, kWidth - 124, by, 100, 26, hwnd,
                     (HMENU)(INT_PTR)kIdCancel, inst, nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Defaults", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 16, by, 92, 26, hwnd,
+    CreateWindowExW(0, L"BUTTON", tr(S_DEFAULTS), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 16, by, 100, 26, hwnd,
                     (HMENU)(INT_PTR)kIdDefaults, inst, nullptr);
 
     EnumChildWindows(
@@ -180,6 +229,17 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (st) {
         switch (msg) {
             case WM_COMMAND:
+                if (LOWORD(wp) == kIdLang && HIWORD(wp) == CBN_SELCHANGE) {
+                    const int sel = (int)SendMessageW((HWND)lp, CB_GETCURSEL, 0, 0);
+                    if (sel >= 0) {
+                        read_controls(st);  // keep whatever the user typed so far
+                        st->cfg.language = language_codes()[sel];
+                        set_language(st->cfg.language);
+                        st->relaunch = true;
+                        DestroyWindow(hwnd);
+                    }
+                    return 0;
+                }
                 switch (LOWORD(wp)) {
                     case kIdSave:
                         read_controls(st);
@@ -192,8 +252,10 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         return 0;
                     case kIdDefaults: {
                         const bool keep = st->cfg.enabled;
+                        const std::wstring lang = st->cfg.language;
                         st->cfg = Config{};
                         st->cfg.enabled = keep;
+                        st->cfg.language = lang;
                         fill_controls(st);
                         return 0;
                     }
@@ -208,11 +270,61 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
+// One window: created, pumped, destroyed. Returns false when the caller has to
+// build it again because the language changed.
+bool run_window(HINSTANCE inst, State& st, bool& quit) {
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof(ncm);
+    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+    st.font = CreateFontIndirectW(&ncm.lfMessageFont);
+
+    const int height = 12 + ((int)st.fields.size() + 1) * kRowH + 8 + 16 + 26 + 20;
+    RECT r{0, 0, kWidth, height};
+    const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+    AdjustWindowRect(&r, style, FALSE);
+    // Arabic mirrors the whole layout, the way the shell does on an Arabic system.
+    const DWORD ex = rtl() ? (WS_EX_LAYOUTRTL | WS_EX_RTLREADING) : 0;
+    HWND hwnd = CreateWindowExW(ex, L"cpulytics_settings", tr(S_SETTINGS_TITLE), style, CW_USEDEFAULT, CW_USEDEFAULT,
+                                r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
+    if (!hwnd) {
+        DeleteObject(st.font);
+        return true;
+    }
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)&st);
+    create_controls(hwnd, inst, &st);
+    fill_controls(&st);
+    ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
+
+    // Own message loop, but every message is dispatched, so the tray icon and the
+    // sampling timer keep working while the window is open. The loop ends as soon
+    // as the window is gone, which happens inside one of these dispatches.
+    MSG msg;
+    while (IsWindow(hwnd)) {
+        const BOOL got = GetMessageW(&msg, nullptr, 0, 0);
+        if (got == 0) {  // the tray menu asked the app to exit
+            PostQuitMessage((int)msg.wParam);
+            quit = true;
+            break;
+        }
+        if (got < 0) break;
+        if (IsDialogMessageW(hwnd, &msg)) continue;
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+    if (IsWindow(hwnd)) DestroyWindow(hwnd);
+    DeleteObject(st.font);
+    st.font = nullptr;
+    return !st.relaunch;
+}
+
 }  // namespace
 
 bool show_settings(HINSTANCE inst, Config& cfg) {
     static bool registered = false;
     if (!registered) {
+        INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_WIN95_CLASSES};
+        InitCommonControlsEx(&icc);
         WNDCLASSEXW wc{};
         wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = settings_proc;
@@ -228,45 +340,13 @@ bool show_settings(HINSTANCE inst, Config& cfg) {
     st.cfg = cfg;
     st.fields = fields_of(st.cfg);
 
-    NONCLIENTMETRICSW ncm{};
-    ncm.cbSize = sizeof(ncm);
-    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    st.font = CreateFontIndirectW(&ncm.lfMessageFont);
-
-    const int height = 12 + (int)st.fields.size() * kRowH + 16 + 26 + 20;
-    RECT r{0, 0, kWidth, height};
-    const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    AdjustWindowRect(&r, style, FALSE);
-    HWND hwnd = CreateWindowExW(0, L"cpulytics_settings", L"cpulytics settings", style, CW_USEDEFAULT, CW_USEDEFAULT,
-                                r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
-    if (!hwnd) {
-        DeleteObject(st.font);
-        return false;
+    bool quit = false;
+    while (!quit) {
+        st.relaunch = false;
+        if (run_window(inst, st, quit)) break;
     }
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)&st);
-    create_controls(hwnd, inst, &st);
-    fill_controls(&st);
-    ShowWindow(hwnd, SW_SHOW);
-    SetForegroundWindow(hwnd);
-
-    // Own message loop, but every message is dispatched, so the tray icon and the
-    // sampling timer keep working while the window is open. The loop ends as soon
-    // as the window is gone, which happens inside one of these dispatches.
-    MSG msg;
-    while (IsWindow(hwnd)) {
-        const BOOL got = GetMessageW(&msg, nullptr, 0, 0);
-        if (got == 0) {              // the tray menu asked the app to exit
-            PostQuitMessage((int)msg.wParam);
-            break;
-        }
-        if (got < 0) break;
-        if (IsDialogMessageW(hwnd, &msg)) continue;
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-    if (IsWindow(hwnd)) DestroyWindow(hwnd);
-    DeleteObject(st.font);
     if (st.saved) cfg = st.cfg;
+    set_language(cfg.language);  // a cancelled language change must not stick
     return st.saved;
 }
 

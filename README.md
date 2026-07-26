@@ -18,6 +18,10 @@ below the work you are actually doing.
   window has to be filled with at least two minutes of data before anything happens.
 - Demotes in **steps**: normal -> below normal -> idle, one step at a time, with a
   cooldown between steps.
+- **Fullscreen apps** (games, players) are immune by default. A process that is
+  ever seen owning a window covering a whole monitor keeps that immunity for its
+  whole life, so alt-tab does not cost it. `fullscreen_max_steps` lifts the immunity
+  and says how far such an app may be demoted.
 - **System processes** (session 0: services, the security stack) get one gentle
   step at most. Kernel and session critical processes (`csrss`, `wininit`,
   `services`, `lsass`, `dwm`, `audiodg`, ...) are never touched at all, and neither
@@ -41,16 +45,23 @@ picks whichever it finds.
 .\scripts\build.ps1 -Run           # build and start it
 ```
 
-Both architectures are built and released. With MSVC the architecture comes from
-the developer prompt (`vcvars64`, or `vcvarsall x86`) and `-Arch` has to agree with
-it; with g++ it is `-m64` / `-m32`, so the 32 bit build needs a multilib toolchain.
+x64, x86 and arm64 are built and released. With MSVC the architecture comes from
+the developer prompt (`vcvars64`, `vcvarsall x86`, `vcvarsall x64_arm64`) and
+`-Arch` has to agree with it; with g++ it is `-m64` / `-m32`, so the 32 bit build
+needs a multilib toolchain. An arm64 build made on an x64 machine is a cross build:
+its tests are compiled but not run there.
 
 The version is taken from `git describe`, there is no version file to bump.
 
 ## Settings
 
-`%APPDATA%\cpulytics\config.ini`, written with comments on first run. Edit it and
-pick "Reload settings" in the tray menu.
+"Settings..." in the tray menu opens a window with every option, a one line hint
+next to each of them and a tooltip with the allowed range and the default. The
+interface speaks English, Spanish, Russian, Chinese, Japanese, Korean and Arabic
+(mirrored layout); "Auto" follows the Windows display language.
+
+The same values live in `%APPDATA%\cpulytics\config.ini`, written with comments on
+first run - edit it by hand and pick "Reload settings file" in the tray menu.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -65,6 +76,7 @@ pick "Reload settings" in the tray menu.
 | `restore_after_seconds` | 120 | how long a process must stay calm before it is restored |
 | `max_steps` | 2 | 0 = off, 1 = below normal, 2 = down to idle |
 | `system_max_steps` | 1 | the same cap for session 0 processes |
+| `fullscreen_max_steps` | 0 | the same cap for fullscreen apps, 0 leaves games alone |
 | `protect_foreground` | true | never demote the window you are using |
 | `notifications` | true | balloon on every change |
 | `restore_on_exit` | true | put everything back on shutdown |
@@ -72,6 +84,7 @@ pick "Reload settings" in the tray menu.
 | `max_tracked` | 2048 | upper bound on the history map |
 | `log_max_kb` | 512 | log is truncated past this size |
 | `whitelist` | empty | comma separated executables that are never touched |
+| `language` | auto | ui language: auto, en, es, ru, zh, ja, ko, ar |
 
 ## Tests
 
@@ -88,9 +101,31 @@ and that the embedded icon decodes.
 
 Versions are git tags: `vMAJOR.MINOR` for features, `vMAJOR.MINOR.PATCH` for fixes.
 Pushing a tag runs `.github/workflows/release.yml`, which builds and tests both
-architectures, packages `cpulytics-<tag>-windows-x64.zip` and
-`cpulytics-<tag>-windows-x86.zip`, and publishes a release with `RELEASE_NOTES.md`
-as its body.
+architectures, packages `cpulytics-<tag>-windows-x64.zip`,
+`cpulytics-<tag>-windows-x86.zip` and `cpulytics-<tag>-windows-arm64.zip`, and
+publishes a release with `RELEASE_NOTES.md` as its body.
+
+## What it can touch, and administrator rights
+
+Lowering a priority is `SetPriorityClass` on a handle opened with
+`PROCESS_SET_INFORMATION`. Windows grants that through the process DACL, which for
+your own processes at the same integrity level lets you do it without any special
+right - that is the same thing task manager does when you set a priority by hand,
+and it needs no elevation. So without administrator cpulytics can already manage
+everything you started yourself, which is where a runaway background task usually
+lives.
+
+It cannot touch what it has no right to: processes of another user, services and
+everything else in session 0, and elevated (high integrity) programs. Those return
+`ERROR_ACCESS_DENIED`, which is written to the log once, after which the process is
+left alone until it restarts. To manage them too, use "Restart as administrator" in
+the tray menu, or start cpulytics from a scheduled task with the highest privileges
+if you want it elevated at logon without a UAC prompt. The tray menu header shows
+whether the current instance is elevated.
+
+Protected processes (anti-cheat, some anti-malware services) refuse even for an
+administrator; nothing can be done about that, and it is why the critical list
+exists in the first place.
 
 ## Notes
 

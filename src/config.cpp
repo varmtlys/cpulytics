@@ -108,6 +108,7 @@ Config Config::load() {
         else if (k == "notifications") c.notifications = as_bool(v, c.notifications);
         else if (k == "restore_on_exit") c.restore_on_exit = as_bool(v, c.restore_on_exit);
         else if (k == "log_enabled") c.log_enabled = as_bool(v, c.log_enabled);
+        else if (k == "language") c.language = lower(widen(trim(v)));
         else if (k == "max_tracked") c.max_tracked = as_int(v, c.max_tracked);
         else if (k == "log_max_kb") c.log_max_kb = as_int(v, c.log_max_kb);
         else if (k == "whitelist") {

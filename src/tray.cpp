@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "engine.h"
+#include "i18n.h"
 #include "icon.h"
 #include "settings.h"
 #include "sysinfo.h"
@@ -136,6 +137,7 @@ void App::add_icon() {
 bool App::init(HINSTANCE inst) {
     inst_ = inst;
     cfg_ = Config::load();
+    set_language(cfg_.language);
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_ = std::make_unique<Engine>(cfg_);
 
@@ -176,6 +178,7 @@ void App::restore_all() {
 
 void App::reload_config() {
     cfg_ = Config::load();
+    set_language(cfg_.language);
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_->set_config(cfg_);
     KillTimer(hwnd_, kTimerId);
@@ -259,7 +262,7 @@ void App::tick() {
 void App::set_tip() {
     const auto top = engine_->top(1);
     std::wstring tip = L"cpulytics";
-    if (!cfg_.enabled) tip += L" (paused)";
+    if (!cfg_.enabled) tip += std::wstring(L" (") + tr(S_PAUSED) + L")";
     if (!top.empty()) {
         wchar_t buf[96];
         wsprintfW(buf, L"\ntop: %s %u%%", top[0].name.c_str(), (unsigned)(top[0].percent + 0.5));
@@ -282,27 +285,27 @@ void App::show_menu() {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
 
-    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0,
-                sys::is_elevated() ? L"cpulytics " CPULYTICS_VERSION_W L" (administrator)"
-                                   : L"cpulytics " CPULYTICS_VERSION_W);
+    std::wstring header = L"cpulytics " CPULYTICS_VERSION_W;
+    if (sys::is_elevated()) header += std::wstring(L" (") + tr(S_ADMINISTRATOR) + L")";
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, header.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     for (const Usage& u : engine_->top(kTopRows)) {
         wchar_t row[160];
-        wsprintfW(row, L"%s  %u%%%s", u.name.c_str(), (unsigned)(u.percent + 0.5),
-                  u.step ? (u.step > 1 ? L"  [idle]" : L"  [lowered]")
-                         : (engine_->is_fullscreen(u.pid) ? L"  [fullscreen]" : L""));
+        const wchar_t* tag = u.step ? (u.step > 1 ? tr(S_TAG_IDLE) : tr(S_TAG_LOWERED))
+                                    : (engine_->is_fullscreen(u.pid) ? tr(S_TAG_FULLSCREEN) : nullptr);
+        wsprintfW(row, tag ? L"%s  %u%%  [%s]" : L"%s  %u%%", u.name.c_str(), (unsigned)(u.percent + 0.5), tag);
         AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, row);
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING | (cfg_.enabled ? MF_CHECKED : 0), kIdEnabled, L"Managing priorities");
-    AppendMenuW(menu, MF_STRING, kIdRestoreAll, L"Restore all now");
+    AppendMenuW(menu, MF_STRING | (cfg_.enabled ? MF_CHECKED : 0), kIdEnabled, tr(S_MENU_MANAGING));
+    AppendMenuW(menu, MF_STRING, kIdRestoreAll, tr(S_MENU_RESTORE_ALL));
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kIdSettings, L"Settings...");
-    AppendMenuW(menu, MF_STRING, kIdReload, L"Reload settings file");
-    if (!sys::is_elevated()) AppendMenuW(menu, MF_STRING, kIdElevate, L"Restart as administrator");
-    AppendMenuW(menu, MF_STRING, kIdLog, L"Open log");
+    AppendMenuW(menu, MF_STRING, kIdSettings, tr(S_MENU_SETTINGS));
+    AppendMenuW(menu, MF_STRING, kIdReload, tr(S_MENU_RELOAD));
+    if (!sys::is_elevated()) AppendMenuW(menu, MF_STRING, kIdElevate, tr(S_MENU_ELEVATE));
+    AppendMenuW(menu, MF_STRING, kIdLog, tr(S_MENU_LOG));
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kIdExit, L"Exit");
+    AppendMenuW(menu, MF_STRING, kIdExit, tr(S_MENU_EXIT));
 
     POINT pt;
     GetCursorPos(&pt);
