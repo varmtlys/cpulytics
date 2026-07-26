@@ -1,0 +1,43 @@
+name: release
+
+# Pushing a version tag is the whole release procedure: vMAJOR.MINOR for features,
+# vMAJOR.MINOR.PATCH for fixes. The binary carries the tag as its version.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build and test
+        shell: pwsh
+        run: .\scripts\build.ps1 -Test
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build\cpulytics.exe, README.md dist\
+          Compress-Archive -Path dist\* -DestinationPath "cpulytics-$tag-windows-x64.zip"
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $ghArgs = @('release', 'create', $tag, "cpulytics-$tag-windows-x64.zip", '--title', $tag)
+          if (Test-Path RELEASE_NOTES.md) { $ghArgs += @('--notes-file', 'RELEASE_NOTES.md') }
+          else { $ghArgs += '--generate-notes' }
+          gh @ghArgs

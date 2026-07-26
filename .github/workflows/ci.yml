@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # build.ps1 takes the version from git describe
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build and test
+        shell: pwsh
+        run: .\scripts\build.ps1 -Test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpulytics-${{ github.sha }}
+          path: build/cpulytics.exe
