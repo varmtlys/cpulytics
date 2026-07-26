@@ -34,8 +34,14 @@ bool is_elevated();
 uint32_t priority_class(uint32_t pid);
 
 // Applies step levels of demotion below orig_class. step 0 restores orig_class.
+// With eco, a demoted process is also marked as low power (EcoQoS): the scheduler
+// stops boosting for it and prefers efficient cores where the cpu has them.
 // Returns false when the process cannot or must not be touched.
-bool apply_step(uint32_t pid, uint32_t orig_class, int step);
+bool apply_step(uint32_t pid, uint32_t orig_class, int step, bool eco = false);
+
+// EcoQoS on its own. False when the process is out of reach or windows is too old.
+bool set_eco_qos(uint32_t pid, bool on);
+bool eco_qos(uint32_t pid);
 
 // Priority class this many steps below the original, for logs and menus.
 uint32_t class_for_step(uint32_t orig_class, int step);

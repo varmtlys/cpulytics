@@ -161,6 +161,14 @@ const wchar_t* const kText[S_COUNT][kLangCount] = {
     {L"executable names, comma separated", L"nombres de ejecutables separados por comas",
      L"имена программ через запятую", L"可执行文件名，用逗号分隔", L"実行ファイル名をカンマ区切りで",
      L"실행 파일 이름, 쉼표로 구분", L"أسماء الملفات التنفيذية مفصولة بفواصل"},
+
+    {L"Efficiency mode", L"Modo de eficiencia", L"Режим энергоэффективности", L"能效模式", L"効率モード",
+     L"효율 모드", L"وضع الكفاءة"},
+    {L"also mark demoted processes as low power (EcoQoS)",
+     L"marcar también los procesos bajados como de bajo consumo (EcoQoS)",
+     L"помечать понижённые процессы как энергосберегающие (EcoQoS)", L"同时将降级进程标记为低功耗 (EcoQoS)",
+     L"降格したプロセスを低電力 (EcoQoS) にする", L"강등된 프로세스를 저전력(EcoQoS)으로 표시",
+     L"وسم العمليات المخفضة كمنخفضة الطاقة (EcoQoS)"},
 };
 
 int g_lang = kEn;

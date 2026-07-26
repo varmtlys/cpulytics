@@ -105,6 +105,7 @@ Config Config::load() {
         else if (k == "fullscreen_max_steps") c.fullscreen_max_steps = as_int(v, c.fullscreen_max_steps);
         else if (k == "enabled") c.enabled = as_bool(v, c.enabled);
         else if (k == "protect_foreground") c.protect_foreground = as_bool(v, c.protect_foreground);
+        else if (k == "eco_qos") c.eco_qos = as_bool(v, c.eco_qos);
         else if (k == "notifications") c.notifications = as_bool(v, c.notifications);
         else if (k == "restore_on_exit") c.restore_on_exit = as_bool(v, c.restore_on_exit);
         else if (k == "log_enabled") c.log_enabled = as_bool(v, c.log_enabled);

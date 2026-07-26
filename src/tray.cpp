@@ -171,7 +171,7 @@ void App::shutdown() {
 void App::restore_all() {
     int n = 0;
     for (const auto& pc : engine_->modified())
-        if (sys::apply_step(pc.first, pc.second, 0)) ++n;
+        if (sys::apply_step(pc.first, pc.second, 0)) ++n;  // also clears EcoQoS
     engine_->forget_all();
     if (n) log_.write(L"restored " + std::to_wstring(n) + L" process(es)");
 }
@@ -220,7 +220,7 @@ void App::apply(const Action& a, std::wstring& summary, int& count) {
     // The class the process had before we ever touched it is the only safe base:
     // reading the current one would ratchet the process down step after step.
     const uint32_t orig = a.from_step > 0 ? engine_->orig_class(a.pid) : sys::priority_class(a.pid);
-    if (!orig || !sys::apply_step(a.pid, orig, a.to_step)) {
+    if (!orig || !sys::apply_step(a.pid, orig, a.to_step, cfg_.eco_qos)) {
         const DWORD err = GetLastError();
         engine_->failed(a.pid);  // out of reach, stop trying until it restarts
         if (err == ERROR_ACCESS_DENIED)

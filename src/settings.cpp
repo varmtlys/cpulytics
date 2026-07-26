@@ -39,6 +39,7 @@ std::vector<Field> fields_of(Config& c) {
         {S_L_STEPS, S_H_STEPS, Kind::Int, &c.max_steps, L"0 - 2", L"2"},
         {S_L_SYSSTEPS, S_H_SYSSTEPS, Kind::Int, &c.system_max_steps, L"0 - 2", L"1"},
         {S_L_FSSTEPS, S_H_FSSTEPS, Kind::Int, &c.fullscreen_max_steps, L"0 - 2", L"0"},
+        {S_L_ECO, S_H_ECO, Kind::Bool, &c.eco_qos, nullptr, nullptr},
         {S_L_FOREGROUND, S_H_FOREGROUND, Kind::Bool, &c.protect_foreground, nullptr, nullptr},
         {S_L_NOTIFY, S_H_NOTIFY, Kind::Bool, &c.notifications, nullptr, nullptr},
         {S_L_RESTORE_EXIT, S_H_RESTORE_EXIT, Kind::Bool, &c.restore_on_exit, nullptr, nullptr},

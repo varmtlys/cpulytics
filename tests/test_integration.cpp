@@ -175,6 +175,28 @@ void test_every_string_is_translated() {
     CHECK(std::wstring(tr(S_SAVE)) == L"Save");
 }
 
+// EcoQoS is a windows 11 / 10 21H1 feature; on anything older it simply cannot be
+// set, and that must not be reported as a working one.
+void test_eco_qos_round_trip() {
+    const uint32_t self = GetCurrentProcessId();
+    const bool supported = sys::set_eco_qos(self, true);
+    if (!supported) {
+        std::printf("note: EcoQoS not available on this windows, skipping\n");
+        return;
+    }
+    CHECK(sys::eco_qos(self));
+    CHECK(sys::set_eco_qos(self, false));
+    CHECK(!sys::eco_qos(self));
+
+    // A demotion with eco on sets both, a restore clears both.
+    CHECK(sys::apply_step(self, NORMAL_PRIORITY_CLASS, 1, true));
+    CHECK(sys::priority_class(self) == BELOW_NORMAL_PRIORITY_CLASS);
+    CHECK(sys::eco_qos(self));
+    CHECK(sys::apply_step(self, NORMAL_PRIORITY_CLASS, 0, true));
+    CHECK(sys::priority_class(self) == NORMAL_PRIORITY_CLASS);
+    CHECK(!sys::eco_qos(self));
+}
+
 void test_hog_is_demoted_then_restored() {
     Child child;
     if (!spawn(child)) {
@@ -248,6 +270,7 @@ int main(int argc, char** argv) {
     test_priority_ladder();
     test_embedded_icon_decodes();
     test_every_string_is_translated();
+    test_eco_qos_round_trip();
     test_hog_is_demoted_then_restored();
     test_exited_process_leaves_no_trace();
 

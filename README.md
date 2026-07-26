@@ -26,6 +26,9 @@ below the work you are actually doing.
   step at most. Kernel and session critical processes (`csrss`, `wininit`,
   `services`, `lsass`, `dwm`, `audiodg`, ...) are never touched at all, and neither
   is anything running at realtime priority.
+- Can additionally mark a demoted process as **low power** (EcoQoS, `eco_qos`):
+  Windows stops boosting for it and puts it on efficient cores where the cpu has
+  them. Off by default, and cleared together with the priority on restore.
 - **Restores** the original priority class - the one the process had before
   cpulytics ever saw it - once the window average drops below the calm threshold and
   stays there. The process you are working in right now (foreground window) is
@@ -78,6 +81,7 @@ first run - edit it by hand and pick "Reload settings file" in the tray menu.
 | `max_steps` | 2 | 0 = off, 1 = below normal, 2 = down to idle |
 | `system_max_steps` | 1 | the same cap for session 0 processes |
 | `fullscreen_max_steps` | 0 | the same cap for fullscreen apps, 0 leaves games alone |
+| `eco_qos` | false | also mark demoted processes as low power (EcoQoS) |
 | `protect_foreground` | true | never demote the window you are using |
 | `notifications` | true | balloon on every change |
 | `restore_on_exit` | true | put everything back on shutdown |

@@ -200,14 +200,38 @@ uint32_t class_for_step(uint32_t orig_class, int step) {
     return kLadder[std::min(idx + step, last)];
 }
 
-bool apply_step(uint32_t pid, uint32_t orig_class, int step) {
+bool set_eco_qos(uint32_t pid, bool on) {
+    Handle h(OpenProcess(PROCESS_SET_INFORMATION, FALSE, pid));
+    if (!h) return false;
+    PROCESS_POWER_THROTTLING_STATE s{};
+    s.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    s.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    // A cleared bit in StateMask means "back to the default", not "forced fast".
+    s.StateMask = on ? PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0;
+    return SetProcessInformation(h.h, ProcessPowerThrottling, &s, sizeof(s)) != 0;
+}
+
+bool eco_qos(uint32_t pid) {
+    Handle h(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+    if (!h) return false;
+    PROCESS_POWER_THROTTLING_STATE s{};
+    s.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;  // the query needs it too
+    if (!GetProcessInformation(h.h, ProcessPowerThrottling, &s, sizeof(s))) return false;
+    return (s.ControlMask & s.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0;
+}
+
+bool apply_step(uint32_t pid, uint32_t orig_class, int step, bool eco) {
     // A realtime process is doing something we are not qualified to slow down.
     if (orig_class == REALTIME_PRIORITY_CLASS) return false;
     const uint32_t target = class_for_step(orig_class, step);
     if (!target) return false;
     Handle h(OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
     if (!h) return false;
-    return SetPriorityClass(h.h, target) != 0;
+    if (!SetPriorityClass(h.h, target)) return false;
+    // Older windows has no EcoQoS; the priority change is what matters, so a
+    // failure here is not one.
+    set_eco_qos(pid, eco && step > 0);
+    return true;
 }
 
 const wchar_t* class_name(uint32_t cls) {

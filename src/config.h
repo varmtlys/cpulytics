@@ -29,6 +29,7 @@ struct Config {
     // behaviour
     bool enabled = true;             // master switch, toggled from the tray menu
     bool protect_foreground = true;  // never demote the process owning the foreground window
+    bool eco_qos = false;            // also mark demoted processes as low power
     bool notifications = true;       // balloon on every change
     bool restore_on_exit = true;     // put every touched process back on shutdown
     bool log_enabled = true;
