@@ -1,5 +1,0 @@
-/* Resource 1 is both the icon of the executable and the icon in the tray. */
-1 ICON "cpulytics.ico"
-
-/* 24 is RT_MANIFEST: common controls 6 and per monitor dpi awareness. */
-1 24 "cpulytics.manifest"

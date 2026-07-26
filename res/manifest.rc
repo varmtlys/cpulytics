@@ -1,0 +1,5 @@
+/* 24 is RT_MANIFEST: common controls 6 and per monitor dpi awareness.
+   With mingw this is compiled to an object called default-manifest.o, which
+   is the name the gcc spec links by itself - ours then shadows the one that
+   ships with newer toolchains instead of clashing with it. */
+1 24 "cpulytics.manifest"

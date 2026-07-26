@@ -1,0 +1,3 @@
+/* Same icon, without the manifest: the test binaries load the icon resource, and
+   linking a second manifest into them upsets the linker. */
+1 ICON "cpulytics.ico"

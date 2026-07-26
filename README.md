@@ -71,6 +71,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 Nothing else is fetched: the app links against system libraries only
 (`user32`, `gdi32`, `shell32`, `comctl32`, `advapi32`, `uxtheme`, `dwmapi`).
 
+**If you have neither**, the script offers to fetch one: it asks first, naming the
+package, the url and the size, and only downloads after a yes. The archive is a
+portable MinGW-w64 (WinLibs, ~260 MB zip), it is verified against the sha256
+published next to it, unpacked into `build	oolchain` and used from there - nothing
+is installed system wide and nothing is put on your PATH. Later builds reuse it
+without asking. `-Fetch` answers yes in advance, for unattended use; in a non
+interactive session or with `CI` set nothing is ever downloaded without it.
+
 **MinGW-w64** is the simplest way in, and the one used for the x64 build. Any of
 these works, as long as `g++.exe`, `gcc.exe` and `windres.exe` end up in the same
 `bin` directory:
@@ -129,8 +137,9 @@ The icon is generated, not a committed blob: `python tools/make_icon.py` redraws
 locked. Exit it from the tray menu, or `taskkill /F /IM cpulytics.exe`.
 
 **`windres: preprocessing failed`** - `windres` preprocesses the `.rc` by running
-`gcc`, and an older build script let the PATH decide which one. Update to the
-current script; if it still happens, check what the PATH offers:
+`gcc` from the PATH. The script puts its own toolchain directory in front of the
+PATH for exactly this reason, so this means an incomplete MinGW directory: check
+what is actually there:
 
 ```
 where.exe gcc g++ windres
@@ -393,9 +402,12 @@ so the two do not both fire.
 
 ## Notes
 
+- The manifest is compiled into `default-manifest.o` for the MinGW build, which is
+  the name gcc links by itself - ours then replaces the one newer toolchains ship
+  instead of clashing with it ("multiple non-default manifests").
 - The icon is resource 1 of the executable, so explorer and the tray show the same
   image: `res/cpulytics.ico` (16 to 256 px, drawn by `tools/make_icon.py`, the two
-  large sizes PNG compressed). It is linked in together with the manifest.
+  large sizes PNG compressed), linked from `res/icon.rc`.
 - Dark mode uses the documented dwm attributes plus the two undocumented uxtheme
   ordinals every dark win32 app uses; where they are missing the app simply stays
   light (theme.cpp).
