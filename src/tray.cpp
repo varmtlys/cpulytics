@@ -10,7 +10,6 @@
 #include "config.h"
 #include "engine.h"
 #include "i18n.h"
-#include "icon.h"
 #include "settings.h"
 #include "sysinfo.h"
 #include "theme.h"
@@ -40,6 +39,22 @@ constexpr UINT kIdReload = 104;
 constexpr UINT kIdLog = 105;
 constexpr UINT kIdElevate = 106;
 constexpr size_t kTopRows = 6;
+constexpr wchar_t kWindowClass[] = L"cpulytics_hidden";
+
+// A second launch pings the running instance instead of opening a dialog nobody
+// asked for. Message only windows are invisible to HWND_BROADCAST, so the ping
+// is posted to the window found by class.
+UINT already_running_message() {
+    static const UINT m = RegisterWindowMessageW(L"cpulytics-already-running");
+    return m;
+}
+
+HWND find_running_instance() { return FindWindowExW(HWND_MESSAGE, nullptr, kWindowClass, nullptr); }
+
+// Held for the lifetime of the process, released before handing over to an
+// elevated copy of ourselves.
+HANDLE g_singleton = nullptr;
+constexpr wchar_t kSingletonName[] = L"Local\\cpulytics-singleton";
 
 std::wstring log_path() {
     std::wstring p = Config::path();
@@ -147,13 +162,16 @@ bool App::init(HINSTANCE inst) {
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = wnd_proc_thunk;
     wc.hInstance = inst;
-    wc.lpszClassName = L"cpulytics_hidden";
+    wc.lpszClassName = kWindowClass;
     if (!RegisterClassExW(&wc)) return false;
 
     hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"cpulytics", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, inst, nullptr);
     if (!hwnd_) return false;
 
-    icon_ = load_icon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+    // Resource 1 is the icon of the executable, so the tray and explorer show
+    // exactly the same image, in the size each of them asks for.
+    icon_ = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+                              GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
     taskbar_created_ = RegisterWindowMessageW(L"TaskbarCreated");
     add_icon();
     SetTimer(hwnd_, kTimerId, (UINT)cfg_.sample_interval_ms, nullptr);
@@ -206,6 +224,14 @@ void App::restart_elevated() {
     wchar_t exe[MAX_PATH];
     if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) return;
     if (cfg_.restore_on_exit) restore_all();
+
+    // The elevated copy starts while we are still alive: hand the singleton over
+    // first, otherwise it would find us and quit again.
+    if (g_singleton) {
+        ReleaseMutex(g_singleton);
+        CloseHandle(g_singleton);
+        g_singleton = nullptr;
+    }
     SHELLEXECUTEINFOW si{};
     si.cbSize = sizeof(si);
     si.lpVerb = L"runas";
@@ -214,6 +240,9 @@ void App::restart_elevated() {
     if (ShellExecuteExW(&si)) {
         if (si.hProcess) CloseHandle(si.hProcess);
         DestroyWindow(hwnd_);  // the elevated copy takes over
+    } else {
+        g_singleton = CreateMutexW(nullptr, TRUE, kSingletonName);  // declined, stay
+        log_.write(L"elevation declined");
     }
 }
 
@@ -362,6 +391,10 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         default:
             if (msg == taskbar_created_ && taskbar_created_) add_icon();  // explorer restarted
+            if (msg == already_running_message()) {
+                notify(L"cpulytics", tr(S_ALREADY_RUNNING));
+                set_tip();
+            }
             return DefWindowProcW(hwnd, msg, wp, lp);
     }
 }
@@ -372,11 +405,12 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int) {
     using namespace cpulytics;
 
-    // One instance only: two of them would fight over the same priorities.
-    HANDLE once = CreateMutexW(nullptr, TRUE, L"Local\\cpulytics-singleton");
-    if (!once || GetLastError() == ERROR_ALREADY_EXISTS) {
-        MessageBoxW(nullptr, L"cpulytics is already running.", L"cpulytics", MB_OK | MB_ICONINFORMATION);
-        if (once) CloseHandle(once);
+    // One instance only: two of them would fight over the same priorities, and
+    // each would undo what the other just did.
+    g_singleton = CreateMutexW(nullptr, TRUE, kSingletonName);
+    if (!g_singleton || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (HWND running = find_running_instance()) PostMessageW(running, already_running_message(), 0, 0);
+        if (g_singleton) CloseHandle(g_singleton);
         return 0;
     }
 
@@ -392,7 +426,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int) {
         rc = (int)msg.wParam;
     }
     g_app = nullptr;
-    ReleaseMutex(once);
-    CloseHandle(once);
+    if (g_singleton) {
+        ReleaseMutex(g_singleton);
+        CloseHandle(g_singleton);
+    }
     return rc;
 }

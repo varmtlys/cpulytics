@@ -141,12 +141,14 @@ exists in the first place.
 
 ## Notes
 
-- The tray icon is a base64 `.ico` embedded in `src/icon.h` (16/24/32 px), so the
-  binary has no external assets. The only resource is the manifest in `res/`.
+- The icon is resource 1 of the executable, so explorer and the tray show the same
+  image: `res/cpulytics.ico` (16 to 256 px, drawn by `tools/make_icon.py`, the two
+  large sizes PNG compressed). It is linked in together with the manifest.
 - Dark mode uses the documented dwm attributes plus the two undocumented uxtheme
   ordinals every dark win32 app uses; where they are missing the app simply stays
   light (theme.cpp).
 - Only one instance can run at a time; two of them would fight over the same
-  priorities.
+  priorities. A second launch pings the running one, which says so with a balloon,
+  and exits. "Restart as administrator" hands the singleton over first.
 - Processes owned by another user or elevated beyond our rights simply fail to
   change once and are then left alone.

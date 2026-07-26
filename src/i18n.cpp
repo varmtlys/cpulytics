@@ -169,6 +169,10 @@ const wchar_t* const kText[S_COUNT][kLangCount] = {
      L"помечать понижённые процессы как энергосберегающие (EcoQoS)", L"同时将降级进程标记为低功耗 (EcoQoS)",
      L"降格したプロセスを低電力 (EcoQoS) にする", L"강등된 프로세스를 저전력(EcoQoS)으로 표시",
      L"وسم العمليات المخفضة كمنخفضة الطاقة (EcoQoS)"},
+
+    {L"cpulytics is already running", L"cpulytics ya se está ejecutando", L"cpulytics уже запущен",
+     L"cpulytics 已在运行", L"cpulytics はすでに実行中です", L"cpulytics이(가) 이미 실행 중입니다",
+     L"cpulytics يعمل بالفعل"},
 };
 
 int g_lang = kEn;

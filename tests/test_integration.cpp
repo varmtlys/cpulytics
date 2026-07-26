@@ -10,7 +10,6 @@
 
 #include "config.h"
 #include "i18n.h"
-#include "icon.h"
 #include "engine.h"
 #include "sysinfo.h"
 #include "theme.h"
@@ -144,14 +143,22 @@ void test_priority_ladder() {
     CHECK(sys::apply_step(0xFFFFFF00u, NORMAL_PRIORITY_CLASS, 1) == false);  // no such process
 }
 
-void test_embedded_icon_decodes() {
-    const auto raw = decode_base64(icon_base64());
-    CHECK(raw.size() > 1000);
-    CHECK(raw[0] == 0 && raw[1] == 0 && raw[2] == 1 && raw[3] == 0);  // ICONDIR, type 1
-    for (int size : {16, 24, 32, 64}) {
-        HICON h = load_icon(size, size);
-        CHECK(h != nullptr);
-        if (h) DestroyIcon(h);
+// The icon is linked in as resource 1, which is what both the tray and explorer
+// read; a build that forgot the resource script would still run, only iconless.
+void test_icon_resource_is_linked() {
+    HMODULE self = GetModuleHandleW(nullptr);
+    for (int size : {16, 24, 32, 48, 64, 128, 256}) {
+        HICON h = (HICON)LoadImageW(self, MAKEINTRESOURCEW(1), IMAGE_ICON, size, size, LR_DEFAULTCOLOR);
+        if (!h) {
+            std::printf("FAIL icon resource missing at %d px\n", size);
+            ++g_failed;
+            continue;
+        }
+        ICONINFO info{};
+        CHECK(GetIconInfo(h, &info));
+        if (info.hbmColor) DeleteObject(info.hbmColor);
+        if (info.hbmMask) DeleteObject(info.hbmMask);
+        DestroyIcon(h);
     }
 }
 
@@ -289,7 +296,7 @@ int main(int argc, char** argv) {
 
     test_sampler_sees_this_process();
     test_priority_ladder();
-    test_embedded_icon_decodes();
+    test_icon_resource_is_linked();
     test_every_string_is_translated();
     test_eco_qos_round_trip();
     test_theme_palette_and_dpi();

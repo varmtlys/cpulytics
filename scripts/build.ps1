@@ -52,12 +52,16 @@ function Invoke-Tool($exe, $argList) {
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
 }
 
-# windres turns the manifest into a linkable resource for the mingw build.
-function Build-Manifest {
-    $res = Join-Path $build 'manifest.res'
-    $target = if ($Arch -eq 'x86') { 'pe-i386' } else { 'pe-x86-64' }
-    Invoke-Tool 'windres' @('-I', "$root\res", '-F', $target, '-O', 'coff',
-                            "$root\res\cpulytics.rc", $res)
+# The icon and the manifest, compiled once per build and linked into every binary
+# so the tests can check the icon the same way the app loads it.
+function Build-Resources {
+    $res = Join-Path $build 'cpulytics.res'
+    if ($useMsvc) {
+        Invoke-Tool 'rc' @('/nologo', "/fo$res", "$root\res\cpulytics.rc")
+    } else {
+        $target = if ($Arch -eq 'x86') { 'pe-i386' } else { 'pe-x86-64' }
+        Invoke-Tool 'windres' @('-I', "$root\res", '-F', $target, '-O', 'coff', "$root\res\cpulytics.rc", $res)
+    }
     return $res
 }
 
@@ -66,10 +70,9 @@ function Build-Exe($outName, $sources, $gui) {
     if ($useMsvc) {
         $a = @('/nologo', '/std:c++17', '/EHsc', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', '/DNOMINMAX', '/utf-8',
                "/I$build", "/I$root\src", "/Fo:$build\", "/Fe:$out") + $sources +
-             @('/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'comctl32.lib', 'advapi32.lib',
-               'uxtheme.lib', 'dwmapi.lib')
-        # The manifest asks for common controls 6 and per monitor dpi awareness.
-        if ($gui) { $a += @('/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', "/MANIFESTINPUT:$root\res\cpulytics.manifest") }
+             @($resources, '/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'comctl32.lib', 'advapi32.lib',
+               'uxtheme.lib', 'dwmapi.lib', '/MANIFEST:NO')  # the manifest comes from the resource
+        if ($gui) { $a += '/SUBSYSTEM:WINDOWS' }
         $a += switch ($Arch) { 'x86' { '/MACHINE:X86' } 'arm64' { '/MACHINE:ARM64' } default { '/MACHINE:X64' } }
         Invoke-Tool 'cl' $a
     } else {
@@ -77,15 +80,15 @@ function Build-Exe($outName, $sources, $gui) {
                '-static', '-static-libgcc',
                '-static-libstdc++', '-s', "-I$build", "-I$root\src", '-o', $out) + $sources +
              @('-lshell32', '-luser32', '-lgdi32', '-lcomctl32', '-ladvapi32', '-luxtheme', '-ldwmapi')
+        $a += $resources
         if ($Arch -eq 'x86') { $a += '-m32' } elseif ($Arch -eq 'x64') { $a += '-m64' }
-        if ($gui) {
-            $a += @('-mwindows', '-municode', (Build-Manifest))
-        }
+        if ($gui) { $a += @('-mwindows', '-municode') }
         Invoke-Tool 'g++' $a
     }
     Write-Host "  -> $out"
 }
 
+$resources = Build-Resources
 Build-Exe 'cpulytics.exe' $src $true
 
 if ($Test) {

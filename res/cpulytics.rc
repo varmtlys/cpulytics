@@ -1,4 +1,5 @@
-#include <windows.h>
+/* Resource 1 is both the icon of the executable and the icon in the tray. */
+1 ICON "cpulytics.ico"
 
-/* windres path: the manifest is linked in as resource 1 of type RT_MANIFEST. */
-1 RT_MANIFEST "cpulytics.manifest"
+/* 24 is RT_MANIFEST: common controls 6 and per monitor dpi awareness. */
+1 24 "cpulytics.manifest"

@@ -51,6 +51,7 @@ enum Str {
     S_L_LOGSIZE, S_H_LOGSIZE,
     S_L_WHITELIST, S_H_WHITELIST,
     S_L_ECO, S_H_ECO,
+    S_ALREADY_RUNNING,
     S_COUNT
 };
 
