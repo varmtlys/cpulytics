@@ -22,6 +22,14 @@ private:
 
 uint32_t foreground_pid();
 
+// Pid of the app whose window covers a whole monitor (a fullscreen game or player),
+// 0 when the foreground window is an ordinary one or belongs to the shell.
+uint32_t fullscreen_pid();
+
+// True when the app runs with an elevated token. Without it only processes of the
+// same user and integrity level can be re-prioritised.
+bool is_elevated();
+
 // 0 when the process is gone or out of reach.
 uint32_t priority_class(uint32_t pid);
 

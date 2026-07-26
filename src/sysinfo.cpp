@@ -151,6 +151,41 @@ uint32_t foreground_pid() {
     return pid;
 }
 
+uint32_t fullscreen_pid() {
+    HWND w = GetForegroundWindow();
+    if (!w || w == GetDesktopWindow() || w == GetShellWindow()) return 0;
+
+    RECT wr;
+    if (!GetWindowRect(w, &wr)) return 0;
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST), &mi)) return 0;
+    // Exclusive and borderless fullscreen both end up covering exactly the monitor.
+    if (wr.left > mi.rcMonitor.left || wr.top > mi.rcMonitor.top || wr.right < mi.rcMonitor.right ||
+        wr.bottom < mi.rcMonitor.bottom)
+        return 0;
+
+    // The desktop background and the task bar also cover the monitor.
+    wchar_t cls[64] = {};
+    GetClassNameW(w, cls, ARRAYSIZE(cls));
+    const std::wstring c = cls;
+    if (c == L"Progman" || c == L"WorkerW" || c == L"Shell_TrayWnd" || c == L"Windows.UI.Core.CoreWindow") return 0;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(w, &pid);
+    return pid;
+}
+
+bool is_elevated() {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION info{};
+    DWORD got = 0;
+    const bool ok = GetTokenInformation(token, TokenElevation, &info, sizeof(info), &got) && info.TokenIsElevated;
+    CloseHandle(token);
+    return ok;
+}
+
 uint32_t priority_class(uint32_t pid) {
     Handle h(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
     if (!h) return 0;
