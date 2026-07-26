@@ -41,6 +41,7 @@ picks whichever it finds.
 ```powershell
 .\scripts\build.ps1                # build\x64\cpulytics.exe
 .\scripts\build.ps1 -Arch x86      # build\x86\cpulytics.exe
+.\scripts\build.ps1 -Arch arm64    # build\arm64\cpulytics.exe (cross build)
 .\scripts\build.ps1 -Test          # build, then run both test suites
 .\scripts\build.ps1 -Run           # build and start it
 ```
@@ -89,19 +90,21 @@ first run - edit it by hand and pick "Reload settings file" in the tray menu.
 ## Tests
 
 `tests/test_engine.cpp` drives the decision logic on a synthetic clock: startup
-bursts, hysteresis, the system process cap, recycled pids, foreground protection.
+bursts, hysteresis, the system and fullscreen caps, recycled pids, foreground
+protection.
 
 `tests/test_integration.cpp` is the real thing: it starts a copy of itself that
 burns a core, runs the real sampler and engine over the real process table, and
 checks that the child is demoted to below normal and restored to normal once it
 goes quiet. It also checks that an exited process leaves nothing behind in memory,
-and that the embedded icon decodes.
+that the embedded icon decodes, and that every interface string exists in every
+language.
 
 ## Releases
 
 Versions are git tags: `vMAJOR.MINOR` for features, `vMAJOR.MINOR.PATCH` for fixes.
-Pushing a tag runs `.github/workflows/release.yml`, which builds and tests both
-architectures, packages `cpulytics-<tag>-windows-x64.zip`,
+Pushing a tag runs `.github/workflows/release.yml`, which builds and tests all
+three architectures, packages `cpulytics-<tag>-windows-x64.zip`,
 `cpulytics-<tag>-windows-x86.zip` and `cpulytics-<tag>-windows-arm64.zip`, and
 publishes a release with `RELEASE_NOTES.md` as its body.
 
