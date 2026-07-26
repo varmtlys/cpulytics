@@ -40,9 +40,9 @@ below the work you are actually doing.
 
 ## Build
 
-Needs MSVC (`cl` and `rc` on PATH, from a Developer PowerShell) or MinGW `g++`
-with `windres`. The script picks whichever it finds and compiles the resources -
-the icon and the manifest - with the matching resource compiler.
+One script builds everything: `scripts\build.ps1`. It finds the toolchain itself,
+compiles the resources with the matching resource compiler and, with `-Test`, runs
+both test suites.
 
 ```powershell
 .\scripts\build.ps1                # build\x64\cpulytics.exe
@@ -52,15 +52,103 @@ the icon and the manifest - with the matching resource compiler.
 .\scripts\build.ps1 -Run           # build and start it
 ```
 
-x64, x86 and arm64 are built and released. With MSVC the architecture comes from
-the developer prompt (`vcvars64`, `vcvarsall x86`, `vcvarsall x64_arm64`) and
-`-Arch` has to agree with it; with g++ it is `-m64` / `-m32`, so the 32 bit build
-needs a multilib toolchain. An arm64 build made on an x64 machine is a cross build:
-its tests are compiled but not run there.
+From cmd.exe, or when the execution policy blocks the script:
 
-The version is taken from `git describe`, there is no version file to bump. The
-icon is generated, not committed as an opaque blob: `python tools/make_icon.py`
-redraws `res/cpulytics.ico` from the code in that script.
+```
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+```
+
+### What you need
+
+| Component | Needed for | Where |
+|---|---|---|
+| A C++17 compiler: MinGW-w64 **or** MSVC | everything | see below |
+| A resource compiler: `windres` (MinGW) or `rc` (Windows SDK) | the icon and the manifest, without which there is no theme and no dpi awareness | comes with the compiler |
+| PowerShell 5.1 | the build script | part of Windows |
+| Git | the version number (`git describe`); without it the build is called `dev` | <https://git-scm.com/download/win> |
+| Python 3 | only to redraw the icon (`tools/make_icon.py`) | <https://www.python.org/downloads/windows/> |
+
+Nothing else is fetched: the app links against system libraries only
+(`user32`, `gdi32`, `shell32`, `comctl32`, `advapi32`, `uxtheme`, `dwmapi`).
+
+**MinGW-w64** is the simplest way in, and the one used for the x64 build. Any of
+these works, as long as `g++.exe`, `gcc.exe` and `windres.exe` end up in the same
+`bin` directory:
+
+- MinGW-w64 builds (this project is built with 15.2, UCRT, seh):
+  <https://github.com/niXman/mingw-builds-binaries/releases>
+- WinLibs, the same thing repackaged: <https://winlibs.com/>
+- MSYS2, if you want a package manager: <https://www.msys2.org/>, then
+  `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils`
+- or `winget install BrechtSanders.WinLibs.POSIX.UCRT`
+
+The script looks for the toolchain next to `g++` on the PATH first, then in
+`C:\ProgramData\mingw64\mingw64\bin`, `C:\mingw64\bin`, `C:\msys64\mingw64\bin`
+and the chocolatey location, and prints the one it picked. It then calls `g++` and
+`windres` by full path and puts that directory first on the PATH for the build, so
+another compiler somewhere else in the PATH cannot break it. If nothing is found it
+says so instead of failing halfway through.
+
+Note that the usual MinGW-w64 packages are **not** multilib: they build x64 only.
+For x86 use MSVC.
+
+**MSVC** covers all three architectures, including arm64. Install Visual Studio
+2022 (any edition) or the standalone Build Tools, with the workload *Desktop
+development with C++* - it brings `cl.exe`, `rc.exe` from the Windows SDK, and the
+optional *MSVC v143 - ARM64 build tools* component for arm64:
+
+- <https://visualstudio.microsoft.com/downloads/> (Build Tools are under
+  "Tools for Visual Studio")
+- or `winget install Microsoft.VisualStudio.2022.BuildTools`
+
+Then build from a developer prompt, where `cl` and `rc` are on the PATH - the
+script prefers MSVC whenever it sees `cl`. The prompt decides the architecture, so
+it has to agree with `-Arch`:
+
+| Start menu entry | `-Arch` |
+|---|---|
+| x64 Native Tools Command Prompt for VS 2022 | `x64` (default) |
+| x86 Native Tools Command Prompt for VS 2022 | `x86` |
+| ARM64 Cross Tools Command Prompt for VS 2022 | `arm64` |
+
+An arm64 build made on an x64 machine is a cross build: the test binaries are
+compiled but not executed there, they run on arm64 hardware.
+
+### Output and version
+
+Binaries land in `build\<arch>\`, which is in `.gitignore`. The version comes from
+`git describe --tags --always --dirty` and is written into `build\<arch>\version.h`
+by the script, so there is no version file to bump by hand.
+
+The icon is generated, not a committed blob: `python tools/make_icon.py` redraws
+`res/cpulytics.ico` (16 to 256 px) from the code in that script.
+
+### When it fails
+
+**`cpulytics is running and holds ... open`** - a running copy keeps its own exe
+locked. Exit it from the tray menu, or `taskkill /F /IM cpulytics.exe`.
+
+**`windres: preprocessing failed`** - `windres` preprocesses the `.rc` by running
+`gcc`, and an older build script let the PATH decide which one. Update to the
+current script; if it still happens, check what the PATH offers:
+
+```
+where.exe gcc g++ windres
+```
+
+They must all come from the same MinGW `bin` directory.
+
+**`No toolchain found`** - neither `cl` (from a developer prompt) nor a complete
+MinGW directory was found. Install one of the two above, or point the PATH at it
+for this shell:
+
+```powershell
+$env:PATH = "C:\ProgramData\mingw64\mingw64\bin;$env:PATH"
+```
+
+**`cl was found but rc ... was not`** - `cl` is on the PATH but the Windows SDK
+tools are not, which happens when the environment was set up by hand. Use one of
+the developer prompts listed above.
 
 ## Settings
 

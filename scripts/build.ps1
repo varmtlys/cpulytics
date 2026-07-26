@@ -43,6 +43,42 @@ Write-Host "cpulytics $version ($Arch)"
 $src = Get-ChildItem (Join-Path $root 'src\*.cpp') | ForEach-Object { $_.FullName }
 $engineSrc = $src | Where-Object { $_ -notmatch 'tray\.cpp$' }
 $useMsvc = [bool](Get-Command cl -ErrorAction SilentlyContinue)
+
+# A mingw install is one directory holding g++, gcc and windres together. Whatever
+# else the PATH of this shell happens to contain, the build uses one toolchain.
+function Find-Mingw {
+    $dirs = @()
+    $g = Get-Command g++ -ErrorAction SilentlyContinue
+    if ($g) { $dirs += Split-Path $g.Source -Parent }
+    $dirs += 'C:\ProgramData\mingw64\mingw64\bin', 'C:\mingw64\bin', 'C:\msys64\mingw64\bin',
+             'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
+    foreach ($d in $dirs) {
+        if ((Test-Path (Join-Path $d 'g++.exe')) -and (Test-Path (Join-Path $d 'gcc.exe')) -and
+            (Test-Path (Join-Path $d 'windres.exe'))) {
+            return $d
+        }
+    }
+    return $null
+}
+
+$mingw = $null
+if ($useMsvc) {
+    if (-not (Get-Command rc -ErrorAction SilentlyContinue)) {
+        throw ("cl was found but rc (the resource compiler from the windows sdk) was not. " +
+               "Run this from a Developer PowerShell / Developer Command Prompt for VS.")
+    }
+} else {
+    $mingw = Find-Mingw
+    if (-not $mingw) {
+        throw ("No toolchain found. Either open a Developer Command Prompt for VS (msvc), " +
+               "or install mingw-w64 so that g++.exe, gcc.exe and windres.exe live in one " +
+               "directory - see the Build section of README.md.")
+    }
+    # windres shells out to gcc, and the compiler links against its own runtime:
+    # both must come from this directory and not from whatever else is in PATH.
+    $env:PATH = "$mingw;$env:PATH"
+    Write-Host "  toolchain: $mingw"
+}
 # x86 and x64 binaries run on an arm64 host through emulation, arm64 ones run
 # nowhere else, so a cross built arm64 test binary is compiled but not executed.
 $canRun = ($Arch -ne 'arm64') -or ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64')
@@ -83,9 +119,14 @@ function Build-Exe($outName, $sources, $gui) {
         $a += $resources
         if ($Arch -eq 'x86') { $a += '-m32' } elseif ($Arch -eq 'x64') { $a += '-m64' }
         if ($gui) { $a += @('-mwindows', '-municode') }
-        Invoke-Tool 'g++' $a
+        Invoke-Tool "$mingw\g++.exe" $a
     }
     Write-Host "  -> $out"
+}
+
+# A running copy holds its own exe open, and the linker error for that is cryptic.
+if (Get-Process cpulytics -ErrorAction SilentlyContinue) {
+    throw "cpulytics is running and holds build\$Arch\cpulytics.exe open. Exit it from the tray menu, or: taskkill /F /IM cpulytics.exe"
 }
 
 $resources = Build-Resources
