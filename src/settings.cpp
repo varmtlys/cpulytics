@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "i18n.h"
+#include "theme.h"
 #include "util.h"
 
 namespace cpulytics {
@@ -88,11 +89,20 @@ struct State {
     Config cfg;
     std::vector<Field> fields;
     std::vector<HWND> ctrl;
+    std::vector<HWND> hints;         // painted in the muted colour
     std::vector<std::wstring> tips;  // the tooltip control keeps pointers into these
     HWND tooltip = nullptr;
     bool saved = false;
-    bool relaunch = false;  // language changed, build the window again
+    bool relaunch = false;  // language, theme or dpi changed: build the window again
     HFONT font = nullptr;
+    int dpi = 96;
+
+    int s(int v) const { return MulDiv(v, dpi, 96); }
+    bool is_hint(HWND h) const {
+        for (HWND x : hints)
+            if (x == h) return true;
+        return false;
+    }
 };
 
 State* state_of(HWND h) { return reinterpret_cast<State*>(GetWindowLongPtrW(h, GWLP_USERDATA)); }
@@ -158,19 +168,22 @@ void add_tip(State* st, HWND ctrl, HWND owner, const std::wstring& text) {
 void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
     const int count = (int)st->fields.size();
     st->ctrl.assign(st->fields.size(), nullptr);
+    st->hints.clear();
     st->tips.clear();
     st->tips.reserve(st->fields.size() + 1);
+    const auto S = [st](int v) { return st->s(v); };
 
     st->tooltip = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0, 0,
                                   hwnd, nullptr, inst, nullptr);
-    SendMessageW(st->tooltip, TTM_SETMAXTIPWIDTH, 0, 420);  // also enables the line break
+    SendMessageW(st->tooltip, TTM_SETMAXTIPWIDTH, 0, S(420));  // also enables the line break
     SendMessageW(st->tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP, 20000);
 
     // Language picker on the first row: changing it rebuilds the window.
-    CreateWindowExW(0, L"STATIC", tr(S_LANGUAGE), WS_CHILD | WS_VISIBLE | SS_RIGHT, 8, 16, kLabelW, 18, hwnd, nullptr,
-                    inst, nullptr);
+    CreateWindowExW(0, L"STATIC", tr(S_LANGUAGE), WS_CHILD | WS_VISIBLE | SS_RIGHT, S(8), S(17), S(kLabelW), S(18),
+                    hwnd, nullptr, inst, nullptr);
     HWND combo = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-                                 kLabelW + 14, 12, 180, 280, hwnd, (HMENU)(INT_PTR)kIdLang, inst, nullptr);
+                                 S(kLabelW + 14), S(12), S(200), S(280), hwnd, (HMENU)(INT_PTR)kIdLang, inst, nullptr);
+    theme::apply_control(combo, true);
     const wchar_t* const* codes = language_codes();
     int selected = 0;
     for (int i = 0; codes[i]; ++i) {
@@ -181,24 +194,27 @@ void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
 
     for (int i = 0; i < count; ++i) {
         const Field& f = st->fields[i];
-        const int y = 12 + (i + 1) * kRowH + 8;
+        const int y = 12 + (i + 1) * kRowH + 10;
         const bool wide = f.kind == Kind::Text;
         const HMENU id = (HMENU)(INT_PTR)(kIdFirst + i);
 
         if (f.kind == Kind::Bool) {
-            st->ctrl[i] =
-                CreateWindowExW(0, L"BUTTON", tr(f.label), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 14,
-                                y + 2, kLabelW + kCtrlW, 20, hwnd, id, inst, nullptr);
+            st->ctrl[i] = CreateWindowExW(0, L"BUTTON", tr(f.label),
+                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, S(14), S(y + 3),
+                                          S(kLabelW + kCtrlW), S(20), hwnd, id, inst, nullptr);
         } else {
-            CreateWindowExW(0, L"STATIC", tr(f.label), WS_CHILD | WS_VISIBLE | SS_RIGHT, 8, y + 4, kLabelW, 18, hwnd,
-                            nullptr, inst, nullptr);
+            CreateWindowExW(0, L"STATIC", tr(f.label), WS_CHILD | WS_VISIBLE | SS_RIGHT, S(8), S(y + 5), S(kLabelW),
+                            S(18), hwnd, nullptr, inst, nullptr);
             st->ctrl[i] = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, kLabelW + 14, y,
-                                          wide ? kWidth - kLabelW - 44 : kCtrlW, 22, hwnd, id, inst, nullptr);
+                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, S(kLabelW + 14), S(y),
+                                          S(wide ? kWidth - kLabelW - 44 : kCtrlW), S(23), hwnd, id, inst, nullptr);
         }
-        if (!wide)
-            CreateWindowExW(0, L"STATIC", tr(f.hint), WS_CHILD | WS_VISIBLE, kHintX, y + 4, kWidth - kHintX - 16, 18,
-                            hwnd, nullptr, inst, nullptr);
+        theme::apply_control(st->ctrl[i], f.kind != Kind::Bool);
+        if (!wide) {
+            HWND hint = CreateWindowExW(0, L"STATIC", tr(f.hint), WS_CHILD | WS_VISIBLE, S(kHintX), S(y + 5),
+                                        S(kWidth - kHintX - 16), S(18), hwnd, nullptr, inst, nullptr);
+            st->hints.push_back(hint);
+        }
 
         // Hovering a control repeats the hint and adds the range and the default,
         // which the single line next to it has no room for.
@@ -208,13 +224,22 @@ void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
         add_tip(st, st->ctrl[i], hwnd, tip);
     }
 
-    const int by = 12 + (count + 1) * kRowH + 8 + 16;
-    CreateWindowExW(0, L"BUTTON", tr(S_SAVE), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, kWidth - 236, by,
-                    100, 26, hwnd, (HMENU)(INT_PTR)kIdSave, inst, nullptr);
-    CreateWindowExW(0, L"BUTTON", tr(S_CANCEL), WS_CHILD | WS_VISIBLE | WS_TABSTOP, kWidth - 124, by, 100, 26, hwnd,
-                    (HMENU)(INT_PTR)kIdCancel, inst, nullptr);
-    CreateWindowExW(0, L"BUTTON", tr(S_DEFAULTS), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 16, by, 100, 26, hwnd,
-                    (HMENU)(INT_PTR)kIdDefaults, inst, nullptr);
+    const int by = 12 + (count + 1) * kRowH + 10 + 18;
+    const struct {
+        const wchar_t* text;
+        int x;
+        int id;
+        DWORD extra;
+    } buttons[] = {
+        {tr(S_SAVE), kWidth - 240, kIdSave, BS_DEFPUSHBUTTON},
+        {tr(S_CANCEL), kWidth - 124, kIdCancel, 0},
+        {tr(S_DEFAULTS), 16, kIdDefaults, 0},
+    };
+    for (const auto& b : buttons) {
+        HWND w = CreateWindowExW(0, L"BUTTON", b.text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | b.extra, S(b.x), S(by),
+                                 S(104), S(30), hwnd, (HMENU)(INT_PTR)b.id, inst, nullptr);
+        theme::apply_control(w, false);
+    }
 
     EnumChildWindows(
         hwnd,
@@ -263,6 +288,43 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 return 0;
 
+            case WM_ERASEBKGND: {
+                RECT rc;
+                GetClientRect(hwnd, &rc);
+                FillRect((HDC)wp, &rc, theme::window_brush());
+                return 1;
+            }
+
+            // Labels and checkbox captions sit on the window background, hints get
+            // the muted colour, inputs the surface one.
+            case WM_CTLCOLORSTATIC:
+            case WM_CTLCOLORBTN: {
+                const auto& p = theme::palette();
+                SetTextColor((HDC)wp, st->is_hint((HWND)lp) ? p.hint : p.text);
+                SetBkMode((HDC)wp, TRANSPARENT);
+                return (LRESULT)theme::window_brush();
+            }
+            case WM_CTLCOLOREDIT:
+            case WM_CTLCOLORLISTBOX: {
+                const auto& p = theme::palette();
+                SetTextColor((HDC)wp, p.text);
+                SetBkColor((HDC)wp, p.surface);
+                return (LRESULT)theme::surface_brush();
+            }
+
+            // The user switched light and dark, or moved the window to a screen
+            // with another scaling: both are easiest to follow by rebuilding.
+            case WM_SETTINGCHANGE:
+                if (lp && lstrcmpiW((const wchar_t*)lp, L"ImmersiveColorSet") == 0) {
+                    st->relaunch = true;
+                    DestroyWindow(hwnd);
+                }
+                return 0;
+            case WM_DPICHANGED:
+                st->relaunch = true;
+                DestroyWindow(hwnd);
+                return 0;
+
             case WM_CLOSE:
                 DestroyWindow(hwnd);
                 return 0;
@@ -274,23 +336,28 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 // One window: created, pumped, destroyed. Returns false when the caller has to
 // build it again because the language changed.
 bool run_window(HINSTANCE inst, State& st, bool& quit) {
-    NONCLIENTMETRICSW ncm{};
-    ncm.cbSize = sizeof(ncm);
-    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    st.font = CreateFontIndirectW(&ncm.lfMessageFont);
-
-    const int height = 12 + ((int)st.fields.size() + 1) * kRowH + 8 + 16 + 26 + 20;
-    RECT r{0, 0, kWidth, height};
     const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    AdjustWindowRect(&r, style, FALSE);
     // Arabic mirrors the whole layout, the way the shell does on an Arabic system.
     const DWORD ex = rtl() ? (WS_EX_LAYOUTRTL | WS_EX_RTLREADING) : 0;
     HWND hwnd = CreateWindowExW(ex, L"cpulytics_settings", tr(S_SETTINGS_TITLE), style, CW_USEDEFAULT, CW_USEDEFAULT,
-                                r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
-    if (!hwnd) {
-        DeleteObject(st.font);
-        return true;
-    }
+                                100, 100, nullptr, nullptr, inst, nullptr);
+    if (!hwnd) return true;
+
+    // The size is known only once the window has a monitor, and with it a scaling.
+    st.dpi = theme::dpi_of(hwnd);
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof(ncm);
+    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+    LOGFONTW lf = ncm.lfMessageFont;
+    lf.lfHeight = MulDiv(lf.lfHeight, st.dpi, 96);
+    st.font = CreateFontIndirectW(&lf);
+
+    const int height = 12 + ((int)st.fields.size() + 1) * kRowH + 10 + 18 + 30 + 22;
+    RECT r{0, 0, st.s(kWidth), st.s(height)};
+    AdjustWindowRect(&r, style, FALSE);
+    SetWindowPos(hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
+    theme::apply_window(hwnd);
+
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)&st);
     create_controls(hwnd, inst, &st);
     fill_controls(&st);

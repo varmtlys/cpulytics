@@ -64,6 +64,11 @@ next to each of them and a tooltip with the allowed range and the default. The
 interface speaks English, Spanish, Russian, Chinese, Japanese, Korean and Arabic
 (mirrored layout); "Auto" follows the Windows display language.
 
+The window and the tray menu follow the Windows light and dark setting, including
+the title bar and the rounded Windows 11 corners, and switch over as soon as the
+system does. The application manifest asks for common controls 6 and per monitor
+v2 dpi awareness, so the window is themed and sharp on a scaled display.
+
 The same values live in `%APPDATA%\cpulytics\config.ini`, written with comments on
 first run - edit it by hand and pick "Reload settings file" in the tray menu.
 
@@ -137,7 +142,10 @@ exists in the first place.
 ## Notes
 
 - The tray icon is a base64 `.ico` embedded in `src/icon.h` (16/24/32 px), so the
-  binary has no external assets.
+  binary has no external assets. The only resource is the manifest in `res/`.
+- Dark mode uses the documented dwm attributes plus the two undocumented uxtheme
+  ordinals every dark win32 app uses; where they are missing the app simply stays
+  light (theme.cpp).
 - Only one instance can run at a time; two of them would fight over the same
   priorities.
 - Processes owned by another user or elevated beyond our rights simply fail to

@@ -52,22 +52,35 @@ function Invoke-Tool($exe, $argList) {
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
 }
 
+# windres turns the manifest into a linkable resource for the mingw build.
+function Build-Manifest {
+    $res = Join-Path $build 'manifest.res'
+    $target = if ($Arch -eq 'x86') { 'pe-i386' } else { 'pe-x86-64' }
+    Invoke-Tool 'windres' @('-I', "$root\res", '-F', $target, '-O', 'coff',
+                            "$root\res\cpulytics.rc", $res)
+    return $res
+}
+
 function Build-Exe($outName, $sources, $gui) {
     $out = Join-Path $build $outName
     if ($useMsvc) {
         $a = @('/nologo', '/std:c++17', '/EHsc', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', '/DNOMINMAX', '/utf-8',
                "/I$build", "/I$root\src", "/Fo:$build\", "/Fe:$out") + $sources +
-             @('/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'comctl32.lib', 'advapi32.lib')
-        if ($gui) { $a += '/SUBSYSTEM:WINDOWS' }
+             @('/link', 'shell32.lib', 'user32.lib', 'gdi32.lib', 'comctl32.lib', 'advapi32.lib',
+               'uxtheme.lib', 'dwmapi.lib')
+        # The manifest asks for common controls 6 and per monitor dpi awareness.
+        if ($gui) { $a += @('/SUBSYSTEM:WINDOWS', '/MANIFEST:EMBED', "/MANIFESTINPUT:$root\res\cpulytics.manifest") }
         $a += switch ($Arch) { 'x86' { '/MACHINE:X86' } 'arm64' { '/MACHINE:ARM64' } default { '/MACHINE:X64' } }
         Invoke-Tool 'cl' $a
     } else {
         $a = @('-std=c++17', '-O2', '-Wall', '-Wextra', '-DNOMINMAX', '-DUNICODE', '-D_UNICODE',
                '-static', '-static-libgcc',
                '-static-libstdc++', '-s', "-I$build", "-I$root\src", '-o', $out) + $sources +
-             @('-lshell32', '-luser32', '-lgdi32', '-lcomctl32', '-ladvapi32')
+             @('-lshell32', '-luser32', '-lgdi32', '-lcomctl32', '-ladvapi32', '-luxtheme', '-ldwmapi')
         if ($Arch -eq 'x86') { $a += '-m32' } elseif ($Arch -eq 'x64') { $a += '-m64' }
-        if ($gui) { $a += @('-mwindows', '-municode') }
+        if ($gui) {
+            $a += @('-mwindows', '-municode', (Build-Manifest))
+        }
         Invoke-Tool 'g++' $a
     }
     Write-Host "  -> $out"

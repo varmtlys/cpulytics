@@ -13,6 +13,7 @@
 #include "icon.h"
 #include "engine.h"
 #include "sysinfo.h"
+#include "theme.h"
 #include "util.h"
 
 using namespace cpulytics;
@@ -197,6 +198,26 @@ void test_eco_qos_round_trip() {
     CHECK(!sys::eco_qos(self));
 }
 
+void test_theme_palette_and_dpi() {
+    theme::init_process();  // must be safe to call even where uxtheme has no dark mode
+    const auto& p = theme::palette();
+    CHECK(p.window != p.text);   // a palette that cannot be read is useless
+    CHECK(p.surface != p.text);
+    CHECK(theme::window_brush() != nullptr);
+    CHECK(theme::surface_brush() != nullptr);
+    CHECK(theme::dpi_of(nullptr) >= 96);
+
+    // Nothing here may crash on a window that is not themed at all.
+    HWND w = CreateWindowExW(0, L"STATIC", L"x", WS_POPUP, 0, 0, 10, 10, nullptr, nullptr, nullptr, nullptr);
+    CHECK(w != nullptr);
+    if (w) {
+        theme::apply_window(w);
+        theme::apply_control(w, true);
+        CHECK(theme::dpi_of(w) >= 96);
+        DestroyWindow(w);
+    }
+}
+
 void test_hog_is_demoted_then_restored() {
     Child child;
     if (!spawn(child)) {
@@ -271,6 +292,7 @@ int main(int argc, char** argv) {
     test_embedded_icon_decodes();
     test_every_string_is_translated();
     test_eco_qos_round_trip();
+    test_theme_palette_and_dpi();
     test_hog_is_demoted_then_restored();
     test_exited_process_leaves_no_trace();
 

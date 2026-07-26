@@ -1,0 +1,4 @@
+#include <windows.h>
+
+/* windres path: the manifest is linked in as resource 1 of type RT_MANIFEST. */
+1 RT_MANIFEST "cpulytics.manifest"
