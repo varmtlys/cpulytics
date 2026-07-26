@@ -29,6 +29,7 @@ struct Field {
 std::vector<Field> fields_of(Config& c) {
     return {
         {S_L_ENABLED, S_H_ENABLED, Kind::Bool, &c.enabled, nullptr, nullptr},
+        {S_L_AUTOSTART, S_H_AUTOSTART, Kind::Bool, &c.autostart, nullptr, nullptr},
         {S_L_INTERVAL, S_H_INTERVAL, Kind::Int, &c.sample_interval_ms, L"250 - 60000", L"2000"},
         {S_L_WINDOW, S_H_WINDOW, Kind::Int, &c.window_seconds, L"30 - 7200", L"600"},
         {S_L_MINHIST, S_H_MINHIST, Kind::Int, &c.min_history_seconds, L"5 - 7200", L"120"},

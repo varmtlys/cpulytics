@@ -80,6 +80,7 @@ first run - edit it by hand and pick "Reload settings file" in the tray menu.
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | true | | master switch, also in the tray menu |
+| `autostart` | false | | start cpulytics at logon |
 | `sample_interval_ms` | 2000 | 250 - 60000 | how often the process table is read |
 | `window_seconds` | 600 | 30 - 7200 | length of the sliding window |
 | `min_history_seconds` | 120 | 5 - window | data needed before anything is decided |
@@ -121,6 +122,14 @@ its current step is below the cap that applies to it (`max_steps`,
 It gets a step back when the average stays at or below `restore_percent` for
 `restore_after_seconds`, and it gets everything back at once when it becomes the
 foreground window or when a cap is lowered below its current step.
+
+**`autostart`** - writes this executable into the per user
+`HKCU\...\CurrentVersion\Run` key, which is the same list the task manager startup
+tab shows. No administrator right and no scheduled task is involved, and for the
+same reason the copy started at logon is never elevated - see the rights section
+below if you need that. The setting is the truth: the entry is rewritten on every
+start, so moving or rebuilding the exe fixes itself, and removing the entry by hand
+while the setting is on brings it back on the next start.
 
 ### Sampling
 
@@ -288,6 +297,11 @@ whether the current instance is elevated.
 Protected processes (anti-cheat, some anti-malware services) refuse even for an
 administrator; nothing can be done about that, and it is why the critical list
 exists in the first place.
+
+`autostart` cannot start an elevated copy: entries in the Run key always start as
+the plain user. For an elevated start at logon, create a scheduled task at logon
+with "run with highest privileges" pointing at the exe, and leave `autostart` off
+so the two do not both fire.
 
 ## Notes
 

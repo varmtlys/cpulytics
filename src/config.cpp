@@ -104,6 +104,7 @@ Config Config::load() {
         else if (k == "system_max_steps") c.system_max_steps = as_int(v, c.system_max_steps);
         else if (k == "fullscreen_max_steps") c.fullscreen_max_steps = as_int(v, c.fullscreen_max_steps);
         else if (k == "enabled") c.enabled = as_bool(v, c.enabled);
+        else if (k == "autostart") c.autostart = as_bool(v, c.autostart);
         else if (k == "protect_foreground") c.protect_foreground = as_bool(v, c.protect_foreground);
         else if (k == "eco_qos") c.eco_qos = as_bool(v, c.eco_qos);
         else if (k == "notifications") c.notifications = as_bool(v, c.notifications);
@@ -140,7 +141,9 @@ bool Config::save() const {
     out << "; cpulytics settings. Restart or \"Reload settings\" from the tray menu to apply.\n"
         << "[cpulytics]\n\n"
         << "; master switch, also toggled from the tray menu\n"
-        << "enabled = " << (enabled ? "true" : "false") << "\n\n"
+        << "enabled = " << (enabled ? "true" : "false") << "\n"
+        << "; start with windows: this writes the HKCU Run value, no admin needed\n"
+        << "autostart = " << (autostart ? "true" : "false") << "\n\n"
         << "; how often the process table is sampled, milliseconds\n"
         << "sample_interval_ms = " << sample_interval_ms << "\n"
         << "; sliding window used to average CPU usage, seconds\n"

@@ -99,6 +99,13 @@ std::vector<Action> pump(Engine& eng, sys::Sampler& sampler, const Config& cfg, 
     return seen;
 }
 
+// The test drives the real engine over the real process table, so it can demote
+// something else that happens to be busy. Whatever it touched is put back.
+void restore_everything(Engine& eng) {
+    for (const auto& pc : eng.modified()) sys::apply_step(pc.first, pc.second, 0);
+    eng.forget_all();
+}
+
 bool saw_demote(const std::vector<Action>& v) {
     for (const Action& a : v)
         if (a.kind == ActionKind::Demote) return true;
@@ -225,6 +232,26 @@ void test_theme_palette_and_dpi() {
     }
 }
 
+// The real Run key, but under a value name of our own, so a real autostart entry
+// is never touched by the test.
+void test_autostart_round_trip() {
+    const wchar_t* name = L"cpulytics-test";
+    CHECK(!sys::autostart_enabled(name));
+
+    CHECK(sys::set_autostart(true, name));
+    CHECK(sys::autostart_enabled(name));
+    CHECK(sys::set_autostart(true, name));  // writing it twice is a no-op
+
+    CHECK(sys::set_autostart(false, name));
+    CHECK(!sys::autostart_enabled(name));
+    CHECK(sys::set_autostart(false, name));  // removing a missing entry is not a failure
+
+    wchar_t left[512] = {};
+    DWORD size = sizeof(left);
+    CHECK(RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", name,
+                       RRF_RT_REG_SZ, nullptr, left, &size) != ERROR_SUCCESS);
+}
+
 void test_hog_is_demoted_then_restored() {
     Child child;
     if (!spawn(child)) {
@@ -255,7 +282,8 @@ void test_hog_is_demoted_then_restored() {
         if (a.kind == ActionKind::Restore && a.pid == pid) restored_child = true;
     CHECK(restored_child);
     CHECK(sys::priority_class(pid) == NORMAL_PRIORITY_CLASS);
-    CHECK(eng.modified().empty());
+    for (const auto& pc : eng.modified()) CHECK(pc.first != pid);  // the child is not held any more
+    restore_everything(eng);
 }
 
 void test_exited_process_leaves_no_trace() {
@@ -282,6 +310,7 @@ void test_exited_process_leaves_no_trace() {
         if (u.pid == pid) still_there = true;
     CHECK(!still_there);
     CHECK(eng.tracked() <= with_child);
+    restore_everything(eng);
 }
 
 }  // namespace
@@ -300,6 +329,7 @@ int main(int argc, char** argv) {
     test_every_string_is_translated();
     test_eco_qos_round_trip();
     test_theme_palette_and_dpi();
+    test_autostart_round_trip();
     test_hog_is_demoted_then_restored();
     test_exited_process_leaves_no_trace();
 

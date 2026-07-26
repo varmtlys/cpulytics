@@ -173,6 +173,12 @@ const wchar_t* const kText[S_COUNT][kLangCount] = {
     {L"cpulytics is already running", L"cpulytics ya se está ejecutando", L"cpulytics уже запущен",
      L"cpulytics 已在运行", L"cpulytics はすでに実行中です", L"cpulytics이(가) 이미 실행 중입니다",
      L"cpulytics يعمل بالفعل"},
+
+    {L"Start with Windows", L"Iniciar con Windows", L"Запускать вместе с Windows", L"开机自启",
+     L"Windows と一緒に起動", L"윈도우 시작 시 실행", L"التشغيل مع ويندوز"},
+    {L"run cpulytics at logon, for this user", L"ejecutar cpulytics al iniciar sesión",
+     L"запускать cpulytics при входе в систему", L"登录时启动 cpulytics", L"サインイン時に cpulytics を起動",
+     L"로그인할 때 cpulytics 실행", L"تشغيل cpulytics عند تسجيل الدخول"},
 };
 
 int g_lang = kEn;

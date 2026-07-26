@@ -176,6 +176,51 @@ uint32_t fullscreen_pid() {
     return pid;
 }
 
+namespace {
+
+constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+
+std::wstring quoted_exe_path() {
+    wchar_t exe[MAX_PATH];
+    const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    return L"\"" + std::wstring(exe, n) + L"\"";
+}
+
+}  // namespace
+
+bool autostart_enabled(const wchar_t* name) {
+    wchar_t value[MAX_PATH + 2] = {};
+    DWORD size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, kRunKey, name, RRF_RT_REG_SZ, nullptr, value, &size) != ERROR_SUCCESS)
+        return false;
+    // An entry left behind by an older copy in another folder is not autostart
+    // for this executable, and rewriting it is exactly what set_autostart does.
+    return quoted_exe_path() == value;
+}
+
+bool set_autostart(bool on, const wchar_t* name) {
+    if (on == autostart_enabled(name)) return true;  // nothing to write
+
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) !=
+        ERROR_SUCCESS)
+        return false;
+
+    LSTATUS st;
+    if (on) {
+        const std::wstring path = quoted_exe_path();
+        st = path.empty() ? ERROR_INVALID_DATA
+                          : RegSetValueExW(key, name, 0, REG_SZ, (const BYTE*)path.c_str(),
+                                           (DWORD)((path.size() + 1) * sizeof(wchar_t)));
+    } else {
+        st = RegDeleteValueW(key, name);
+        if (st == ERROR_FILE_NOT_FOUND) st = ERROR_SUCCESS;
+    }
+    RegCloseKey(key);
+    return st == ERROR_SUCCESS;
+}
+
 bool is_elevated() {
     HANDLE token = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;

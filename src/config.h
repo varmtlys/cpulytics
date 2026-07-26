@@ -28,6 +28,7 @@ struct Config {
 
     // behaviour
     bool enabled = true;             // master switch, toggled from the tray menu
+    bool autostart = false;          // run at logon, kept in the HKCU Run key
     bool protect_foreground = true;  // never demote the process owning the foreground window
     bool eco_qos = false;            // also mark demoted processes as low power
     bool notifications = true;       // balloon on every change

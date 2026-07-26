@@ -155,6 +155,9 @@ bool App::init(HINSTANCE inst) {
     theme::init_process();  // dark popup menus and dark controls when windows is dark
     cfg_ = Config::load();
     set_language(cfg_.language);
+    // The setting is the truth: this repairs the entry after the exe was moved,
+    // and clears it if the file was edited by hand.
+    sys::set_autostart(cfg_.autostart);
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_ = std::make_unique<Engine>(cfg_);
 
@@ -199,6 +202,7 @@ void App::restore_all() {
 void App::reload_config() {
     cfg_ = Config::load();
     set_language(cfg_.language);
+    sys::set_autostart(cfg_.autostart);
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_->set_config(cfg_);
     KillTimer(hwnd_, kTimerId);
@@ -210,6 +214,7 @@ void App::reload_config() {
 void App::open_settings() {
     if (!show_settings(inst_, cfg_)) return;
     engine_->set_config(cfg_);
+    if (!sys::set_autostart(cfg_.autostart)) log_.write(L"could not change the autostart entry");
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     KillTimer(hwnd_, kTimerId);
     SetTimer(hwnd_, kTimerId, (UINT)cfg_.sample_interval_ms, nullptr);

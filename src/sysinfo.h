@@ -26,6 +26,12 @@ uint32_t foreground_pid();
 // 0 when the foreground window is an ordinary one or belongs to the shell.
 uint32_t fullscreen_pid();
 
+// Autostart through the per user Run key: no admin, no scheduled task, and the
+// same entry the task manager startup tab shows. The name is the registry value,
+// it is a parameter so the tests can use one of their own.
+bool set_autostart(bool on, const wchar_t* name = L"cpulytics");
+bool autostart_enabled(const wchar_t* name = L"cpulytics");
+
 // True when the app runs with an elevated token. Without it only processes of the
 // same user and integrity level can be re-prioritised.
 bool is_elevated();
