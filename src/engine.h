@@ -35,6 +35,15 @@ struct Action {
     bool system = false;
 };
 
+// A process we currently hold demoted. create_time makes the pid unambiguous
+// after a restart, when another process may already own that number.
+struct Held {
+    uint32_t pid = 0;
+    uint64_t create_time = 0;
+    uint32_t orig_class = 0;
+    int step = 0;
+};
+
 // A row for the tray menu / tooltip.
 struct Usage {
     uint32_t pid = 0;
@@ -61,8 +70,8 @@ public:
     // Could not change this process (no rights, gone): stop trying until it restarts.
     void failed(uint32_t pid);
 
-    // Processes we currently hold demoted, with the priority class they had before.
-    std::vector<std::pair<uint32_t, uint32_t>> modified() const;
+    // Processes we currently hold demoted, with the class they had before.
+    std::vector<Held> modified() const;
     void forget_all();
 
     // Priority class remembered before the first demotion, 0 when untouched.

@@ -56,11 +56,17 @@ HWND find_running_instance() { return FindWindowExW(HWND_MESSAGE, nullptr, kWind
 HANDLE g_singleton = nullptr;
 constexpr wchar_t kSingletonName[] = L"Local\\cpulytics-singleton";
 
-std::wstring log_path() {
-    std::wstring p = Config::path();
+std::wstring config_dir() {
+    const std::wstring p = Config::path();
     const size_t slash = p.find_last_of(L'\\');
-    return (slash == std::wstring::npos ? L"." : p.substr(0, slash)) + L"\\cpulytics.log";
+    return slash == std::wstring::npos ? L"." : p.substr(0, slash);
 }
+
+std::wstring log_path() { return config_dir() + L"\\cpulytics.log"; }
+
+// What is held demoted right now, so that a crash or a kill does not leave
+// processes stuck at a lowered priority until the next reboot.
+std::wstring state_path() { return config_dir() + L"\\state.txt"; }
 
 // Append only log with a hard size cap: it can never fill the disk of a machine
 // that runs the app for months.
@@ -116,6 +122,8 @@ private:
     void set_tip();
     void add_icon();
     void reload_config();
+    void save_state();
+    void recover_state();
     void open_settings();
     void restart_elevated();
     void restore_all();
@@ -177,6 +185,7 @@ bool App::init(HINSTANCE inst) {
                               GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
     taskbar_created_ = RegisterWindowMessageW(L"TaskbarCreated");
     add_icon();
+    recover_state();
     SetTimer(hwnd_, kTimerId, (UINT)cfg_.sample_interval_ms, nullptr);
     log_.write(L"started, version " + widen(CPULYTICS_VERSION));
     return true;
@@ -193,10 +202,56 @@ void App::shutdown() {
 
 void App::restore_all() {
     int n = 0;
-    for (const auto& pc : engine_->modified())
-        if (sys::apply_step(pc.first, pc.second, 0)) ++n;  // also clears EcoQoS
+    for (const Held& h : engine_->modified())
+        if (sys::apply_step(h.pid, h.orig_class, 0)) ++n;  // also clears EcoQoS
     engine_->forget_all();
+    save_state();
     if (n) log_.write(L"restored " + std::to_wstring(n) + L" process(es)");
+}
+
+// One line per held process: pid, create time, and the class it had before.
+void App::save_state() {
+    const std::filesystem::path p(state_path());
+    const auto held = engine_->modified();
+    std::error_code ec;
+    if (held.empty()) {
+        std::filesystem::remove(p, ec);
+        return;
+    }
+    std::ofstream out(p, std::ios::trunc);
+    if (!out) return;
+    for (const Held& h : held) out << h.pid << " " << h.create_time << " " << h.orig_class << "\n";
+}
+
+// Runs once at startup: whatever the previous instance was still holding when it
+// was killed is put back, as long as the pid belongs to the same process.
+void App::recover_state() {
+    const std::filesystem::path p(state_path());
+    std::ifstream in(p);
+    if (!in) return;
+
+    std::vector<Held> held;
+    uint32_t pid = 0, orig = 0;
+    uint64_t created = 0;
+    while (in >> pid >> created >> orig) held.push_back({pid, created, orig, 1});
+    in.close();
+    std::error_code ec;
+    std::filesystem::remove(p, ec);
+    if (held.empty()) return;
+
+    std::vector<ProcInfo> procs;
+    if (!sampler_.sample(procs)) return;
+    int n = 0;
+    for (const Held& h : held) {
+        for (const ProcInfo& proc : procs) {
+            // Same pid and same start time: it really is the process we demoted.
+            if (proc.pid == h.pid && proc.create_time == h.create_time) {
+                if (sys::apply_step(h.pid, h.orig_class, 0)) ++n;
+                break;
+            }
+        }
+    }
+    if (n) log_.write(L"restored " + std::to_wstring(n) + L" process(es) held by the previous run");
 }
 
 void App::reload_config() {
@@ -207,7 +262,9 @@ void App::reload_config() {
     engine_->set_config(cfg_);
     KillTimer(hwnd_, kTimerId);
     SetTimer(hwnd_, kTimerId, (UINT)cfg_.sample_interval_ms, nullptr);
+    if (!cfg_.enabled) restore_all();
     log_.write(L"settings reloaded");
+    set_tip();
 }
 
 // Settings live in their own window; the sampling timer keeps running behind it.
@@ -288,11 +345,17 @@ void App::tick() {
         if (a.kind == ActionKind::Demote) ++demotions;
         apply(a, summary, count);
     }
-    if (count && cfg_.notifications) {
-        if (count > 3) summary += L"and " + std::to_wstring(count - 3) + L" more\n";
-        notify(demotions ? L"cpulytics: priority lowered" : L"cpulytics: priority restored", summary);
-    }
     set_tip();
+    if (!count) return;
+    save_state();
+    if (cfg_.notifications) {
+        if (count > 3) {
+            wchar_t more[64];
+            wsprintfW(more, tr(S_BALLOON_MORE), (unsigned)(count - 3));
+            summary += std::wstring(more) + L"\n";
+        }
+        notify(tr(demotions ? S_BALLOON_LOWERED : S_BALLOON_RESTORED), summary);
+    }
 }
 
 void App::set_tip() {
@@ -301,7 +364,7 @@ void App::set_tip() {
     if (!cfg_.enabled) tip += std::wstring(L" (") + tr(S_PAUSED) + L")";
     if (!top.empty()) {
         wchar_t buf[96];
-        wsprintfW(buf, L"\ntop: %s %u%%", top[0].name.c_str(), (unsigned)(top[0].percent + 0.5));
+        wsprintfW(buf, L"\n%s: %s %u%%", tr(S_TOP), top[0].name.c_str(), (unsigned)(top[0].percent + 0.5));
         tip += buf;
     }
     nid_.uFlags = NIF_TIP;
@@ -383,7 +446,7 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         // only needs the theme cache flushed.
         case WM_SETTINGCHANGE:
             if (lp && lstrcmpiW((const wchar_t*)lp, L"ImmersiveColorSet") == 0) theme::init_process();
-            return 0;
+            return DefWindowProcW(hwnd, msg, wp, lp);
 
         case WM_QUERYENDSESSION:
             if (cfg_.restore_on_exit) restore_all();

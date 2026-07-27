@@ -102,7 +102,7 @@ std::vector<Action> pump(Engine& eng, sys::Sampler& sampler, const Config& cfg, 
 // The test drives the real engine over the real process table, so it can demote
 // something else that happens to be busy. Whatever it touched is put back.
 void restore_everything(Engine& eng) {
-    for (const auto& pc : eng.modified()) sys::apply_step(pc.first, pc.second, 0);
+    for (const Held& h : eng.modified()) sys::apply_step(h.pid, h.orig_class, 0);
     eng.forget_all();
 }
 
@@ -188,6 +188,16 @@ void test_every_string_is_translated() {
     CHECK(!rtl());
     set_language(L"nonsense");  // unknown codes fall back to english
     CHECK(std::wstring(tr(S_SAVE)) == L"Save");
+
+    // The table is a plain array in the order of the enum, so adding an id in the
+    // middle without adding its row would shift every string after it. These
+    // anchors are spread over the table to catch that.
+    set_language(L"en");
+    CHECK(std::wstring(tr(S_MENU_EXIT)) == L"Exit");
+    CHECK(std::wstring(tr(S_L_ENABLED)) == L"Manage priorities");
+    CHECK(std::wstring(tr(S_L_ECO)) == L"Efficiency mode");
+    CHECK(std::wstring(tr(S_ALREADY_RUNNING)) == L"cpulytics is already running");
+    CHECK(std::wstring(tr(S_L_AUTOSTART)) == L"Start with Windows");
 }
 
 // EcoQoS is a windows 11 / 10 21H1 feature; on anything older it simply cannot be
@@ -282,7 +292,7 @@ void test_hog_is_demoted_then_restored() {
         if (a.kind == ActionKind::Restore && a.pid == pid) restored_child = true;
     CHECK(restored_child);
     CHECK(sys::priority_class(pid) == NORMAL_PRIORITY_CLASS);
-    for (const auto& pc : eng.modified()) CHECK(pc.first != pid);  // the child is not held any more
+    for (const Held& h : eng.modified()) CHECK(h.pid != pid);  // the child is not held any more
     restore_everything(eng);
 }
 

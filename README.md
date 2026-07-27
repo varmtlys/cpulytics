@@ -324,12 +324,16 @@ every decision.
 
 **`restore_on_exit`** - restore every touched process when cpulytics exits, on the
 tray menu Exit as well as on log off and shutdown. Off leaves priorities where they
-are. Note that a hard kill cannot restore anything either way, so the next start
-after one will find processes it does not know it demoted.
+are. A hard kill cannot run this, so what is held is also written to `state.txt`
+next to the config: the next start reads it, puts those processes back (matching
+them by pid *and* start time, so a recycled pid is never touched) and deletes the
+file.
 
 **`log_enabled`** - writes `cpulytics.log` next to the config: start and stop, every
 change with the old class, the new one and the average that caused it, and every
-process that refused with access denied.
+process that refused with access denied. If nothing is happening and you expect it
+to, this file is the answer: no `demote:` line means no process ever crossed
+`demote_percent` over the whole window, and therefore no balloon either.
 
 **`language`** - `auto` follows the windows display language, or force one of
 `en`, `es`, `ru`, `zh`, `ja`, `ko`, `ar`. Arabic mirrors the settings window.

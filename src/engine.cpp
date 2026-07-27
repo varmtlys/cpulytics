@@ -104,7 +104,12 @@ std::vector<Action> Engine::update(uint64_t now, const std::vector<ProcInfo>& pr
     for (auto& kv : procs_) {
         Track& t = kv.second;
         const uint32_t pid = kv.first;
-        if (t.critical || t.blocked || whitelisted(t.name)) continue;
+        if (t.critical || t.blocked) continue;
+        if (whitelisted(t.name)) {
+            // Added to the whitelist while it was already demoted: let it go.
+            if (t.step > 0) out.push_back({ActionKind::Restore, pid, t.name, t.step, 0, t.percent, t.system});
+            continue;
+        }
 
         const bool foreground = cfg_.protect_foreground && foreground_pid && pid == foreground_pid;
 
@@ -165,10 +170,11 @@ void Engine::failed(uint32_t pid) {
     if (it != procs_.end()) it->second.blocked = true;
 }
 
-std::vector<std::pair<uint32_t, uint32_t>> Engine::modified() const {
-    std::vector<std::pair<uint32_t, uint32_t>> v;
+std::vector<Held> Engine::modified() const {
+    std::vector<Held> v;
     for (const auto& kv : procs_)
-        if (kv.second.step > 0 && kv.second.orig_class) v.push_back({kv.first, kv.second.orig_class});
+        if (kv.second.step > 0 && kv.second.orig_class)
+            v.push_back({kv.first, kv.second.create_time, kv.second.orig_class, kv.second.step});
     return v;
 }
 
