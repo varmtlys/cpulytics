@@ -26,6 +26,10 @@ uint32_t foreground_pid();
 // 0 when the foreground window is an ordinary one or belongs to the shell.
 uint32_t fullscreen_pid();
 
+// True when the cpu has more than one efficiency class, that is performance and
+// efficient cores. EcoQoS only has somewhere to move work on such a machine.
+bool has_efficiency_cores();
+
 // Autostart through the per user Run key: no admin, no scheduled task, and the
 // same entry the task manager startup tab shows. The name is the registry value,
 // it is a parameter so the tests can use one of their own.

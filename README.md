@@ -307,11 +307,14 @@ of a game does not silently remove its protection.
 ### Behaviour
 
 **`eco_qos`** - additionally marks a demoted process as low power (EcoQoS): windows
-stops boosting for it and prefers efficient cores where the cpu has them. It is
-cleared together with the priority when the process is restored. Needs windows 11
-or 10 21H1; where the api is missing the demotion still happens and the flag is
-skipped. On a cpu without efficiency cores the effect is on clocks and power draw,
-not on which core the work lands.
+stops boosting for it and moves it to the efficient cores. It is cleared together
+with the priority when the process is restored, and it needs windows 11 or 10 21H1.
+
+The setting is only offered on a cpu that actually has efficiency cores. cpulytics
+asks the scheduler (`GetSystemCpuSetInformation`): if every core reports the same
+efficiency class the machine is homogeneous, there is nowhere to move the work to,
+and the checkbox is greyed out with that as its hint. On such a machine the flag is
+never applied even if the settings file says otherwise.
 
 **`protect_foreground`** - the process owning the foreground window is never
 demoted, and if it is already demoted it is put back to its original class at once,
@@ -366,6 +369,12 @@ kernel and session critical processes (`csrss`, `wininit`, `services`, `lsass`,
 | want it to watch and report only | `max_steps` = 0 |
 | want less battery drain from background work | `eco_qos` = true |
 
+## About and licence
+
+"About" in the tray menu opens a small window with the version, the author, the
+licence and the same icon the tray shows, themed like the rest of the app. cpulytics is MIT licensed, see [LICENSE](LICENSE) - free to
+use, change and share, with no warranty.
+
 ## Tests
 
 `tests/test_engine.cpp` drives the decision logic on a synthetic clock: startup
@@ -377,8 +386,9 @@ burns a core, runs the real sampler and engine over the real process table, and
 checks that the child is demoted to below normal and restored to normal once it
 goes quiet. It also checks that an exited process leaves nothing behind in memory,
 that the icon resource is linked in every size, that EcoQoS survives a round trip,
-that the theme palette and the dpi query answer, and that every interface string
-exists in every language.
+that the autostart entry can be written and removed, that the theme palette, the
+dpi and the efficiency core query answer, and that every interface string exists in
+every language.
 
 ## Releases
 

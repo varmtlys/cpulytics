@@ -198,6 +198,7 @@ void test_every_string_is_translated() {
     CHECK(std::wstring(tr(S_L_ECO)) == L"Efficiency mode");
     CHECK(std::wstring(tr(S_ALREADY_RUNNING)) == L"cpulytics is already running");
     CHECK(std::wstring(tr(S_L_AUTOSTART)) == L"Start with Windows");
+    CHECK(std::wstring(tr(S_ABOUT)) == L"About");
 }
 
 // EcoQoS is a windows 11 / 10 21H1 feature; on anything older it simply cannot be
@@ -220,6 +221,14 @@ void test_eco_qos_round_trip() {
     CHECK(sys::apply_step(self, NORMAL_PRIORITY_CLASS, 0, true));
     CHECK(sys::priority_class(self) == NORMAL_PRIORITY_CLASS);
     CHECK(!sys::eco_qos(self));
+}
+
+// A hybrid cpu reports more than one efficiency class; a homogeneous one reports
+// the same class for every core. Either answer is fine, an exception is not.
+void test_efficiency_core_detection() {
+    const bool hybrid = sys::has_efficiency_cores();
+    CHECK(hybrid == sys::has_efficiency_cores());  // cached, and stable
+    std::printf("note: efficiency cores %s on this machine\n", hybrid ? "found" : "not found");
 }
 
 void test_theme_palette_and_dpi() {
@@ -338,6 +347,7 @@ int main(int argc, char** argv) {
     test_icon_resource_is_linked();
     test_every_string_is_translated();
     test_eco_qos_round_trip();
+    test_efficiency_core_detection();
     test_theme_palette_and_dpi();
     test_autostart_round_trip();
     test_hog_is_demoted_then_restored();

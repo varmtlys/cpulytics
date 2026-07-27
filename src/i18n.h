@@ -53,6 +53,9 @@ enum Str {
     S_L_ECO, S_H_ECO,
     S_ALREADY_RUNNING,
     S_L_AUTOSTART, S_H_AUTOSTART,
+    S_H_ECO_NO_CORES,
+    // about
+    S_ABOUT, S_ABOUT_TAGLINE, S_ABOUT_LICENSE, S_CLOSE,
     S_COUNT
 };
 

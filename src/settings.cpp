@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "i18n.h"
+#include "sysinfo.h"
 #include "theme.h"
 #include "util.h"
 
@@ -22,8 +23,10 @@ struct Field {
     Str hint;
     Kind kind;
     void* ptr;
-    const wchar_t* range;     // shown in the tooltip, matches Config::sanitize
-    const wchar_t* fallback;  // the default value, also for the tooltip
+    const wchar_t* range = nullptr;     // shown in the tooltip, matches Config::sanitize
+    const wchar_t* fallback = nullptr;  // the default value, also for the tooltip
+    bool available = true;              // greyed out when the machine cannot do it
+    Str unavailable = S_COUNT;          // why, in place of the hint
 };
 
 std::vector<Field> fields_of(Config& c) {
@@ -41,7 +44,8 @@ std::vector<Field> fields_of(Config& c) {
         {S_L_STEPS, S_H_STEPS, Kind::Int, &c.max_steps, L"0 - 2", L"2"},
         {S_L_SYSSTEPS, S_H_SYSSTEPS, Kind::Int, &c.system_max_steps, L"0 - 2", L"1"},
         {S_L_FSSTEPS, S_H_FSSTEPS, Kind::Int, &c.fullscreen_max_steps, L"0 - 2", L"0"},
-        {S_L_ECO, S_H_ECO, Kind::Bool, &c.eco_qos, nullptr, nullptr},
+        // EcoQoS can only move work to efficient cores where there are any.
+        {S_L_ECO, S_H_ECO, Kind::Bool, &c.eco_qos, nullptr, nullptr, sys::has_efficiency_cores(), S_H_ECO_NO_CORES},
         {S_L_FOREGROUND, S_H_FOREGROUND, Kind::Bool, &c.protect_foreground, nullptr, nullptr},
         {S_L_NOTIFY, S_H_NOTIFY, Kind::Bool, &c.notifications, nullptr, nullptr},
         {S_L_RESTORE_EXIT, S_H_RESTORE_EXIT, Kind::Bool, &c.restore_on_exit, nullptr, nullptr},
@@ -62,6 +66,127 @@ constexpr int kIdLang = 900;
 constexpr int kIdSave = IDOK;        // Enter saves
 constexpr int kIdCancel = IDCANCEL;  // Escape closes
 constexpr int kIdDefaults = 3;
+
+}  // namespace
+
+// The about window: what this is, who wrote it, and under which licence.
+void show_about(HINSTANCE inst, HWND owner) {
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+            switch (m) {
+                case WM_ERASEBKGND: {
+                    RECT rc;
+                    GetClientRect(h, &rc);
+                    FillRect((HDC)w, &rc, theme::window_brush());
+                    return 1;
+                }
+                case WM_CTLCOLORSTATIC:
+                case WM_CTLCOLORBTN:
+                    SetTextColor((HDC)w, theme::palette().text);
+                    SetBkMode((HDC)w, TRANSPARENT);
+                    return (LRESULT)theme::window_brush();
+                case WM_COMMAND:
+                    if (LOWORD(w) == IDOK || LOWORD(w) == IDCANCEL) DestroyWindow(h);
+                    return 0;
+                case WM_CLOSE:
+                    DestroyWindow(h);
+                    return 0;
+            }
+            return DefWindowProcW(h, m, w, l);
+        };
+        wc.hInstance = inst;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.lpszClassName = L"cpulytics_about";
+        if (!RegisterClassExW(&wc)) return;
+        registered = true;
+    }
+
+    // The screen the user is looking at: the one holding the window that opened
+    // this, or the one under the mouse, which is where the tray was just clicked.
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    HMONITOR mon = owner ? MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST)
+                         : MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(mon, &mi)) return;
+
+    const int dpi = theme::dpi_of(owner);
+    const auto S = [dpi](int v) { return MulDiv(v, dpi, 96); };
+    const int w = 480, h = 214;  // wide enough for the longest translation
+    const DWORD style = WS_POPUPWINDOW | WS_CAPTION;
+    RECT r{0, 0, S(w), S(h)};
+    AdjustWindowRect(&r, style, FALSE);
+    const int width = r.right - r.left, height = r.bottom - r.top;
+    // A popup window ignores CW_USEDEFAULT and would land in the top left corner,
+    // so it is centred on the work area by hand.
+    const int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - width) / 2;
+    const int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - height) / 2;
+    HWND hwnd = CreateWindowExW(rtl() ? WS_EX_LAYOUTRTL : 0, L"cpulytics_about", tr(S_ABOUT), style, x, y, width,
+                                height, owner, nullptr, inst, nullptr);
+    if (!hwnd) return;
+    theme::apply_window(hwnd);
+
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof(ncm);
+    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+    LOGFONTW lf = ncm.lfMessageFont;
+    lf.lfHeight = MulDiv(lf.lfHeight, dpi, 96);
+    HFONT font = CreateFontIndirectW(&lf);
+
+    // The same icon the tray and explorer use, at the size this dpi asks for.
+    const int icon_px = S(48);
+    HICON icon = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON, icon_px, icon_px, LR_DEFAULTCOLOR);
+    HWND pic = CreateWindowExW(0, L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON | SS_REALSIZEIMAGE, S(20), S(20),
+                               icon_px, icon_px, hwnd, nullptr, inst, nullptr);
+    if (icon) SendMessageW(pic, STM_SETICON, (WPARAM)icon, 0);
+
+    const int text_x = S(88);
+    const wchar_t* lines[] = {L"cpulytics " CPULYTICS_VERSION_W, tr(S_ABOUT_TAGLINE),
+                              L"© 2026 Ildar Latypov <varmtlys@gmail.com>", tr(S_ABOUT_LICENSE)};
+    for (int i = 0; i < 4; ++i) {
+        // The licence line is the long one: it gets room for two lines, and the
+        // static wraps it on its own where a translation needs them.
+        const int line_h = i == 3 ? S(38) : S(20);
+        CreateWindowExW(0, L"STATIC", lines[i], WS_CHILD | WS_VISIBLE, text_x, S(20 + i * 22),
+                        S(w) - text_x - S(16), line_h, hwnd, nullptr, inst, nullptr);
+    }
+
+    CreateWindowExW(0, L"BUTTON", tr(S_CLOSE), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, S(w - 120),
+                    S(h - 54), S(100), S(30), hwnd, (HMENU)(INT_PTR)IDOK, inst, nullptr);
+
+    EnumChildWindows(
+        hwnd,
+        [](HWND child, LPARAM p) -> BOOL {
+            SendMessageW(child, WM_SETFONT, (WPARAM)p, TRUE);
+            theme::apply_control(child, false);
+            return TRUE;
+        },
+        (LPARAM)font);
+    ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
+
+    MSG msg;
+    while (IsWindow(hwnd)) {
+        const BOOL got = GetMessageW(&msg, nullptr, 0, 0);
+        if (got == 0) {
+            PostQuitMessage((int)msg.wParam);
+            break;
+        }
+        if (got < 0) break;
+        if (IsDialogMessageW(hwnd, &msg)) continue;
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+    if (IsWindow(hwnd)) DestroyWindow(hwnd);
+    if (icon) DestroyIcon(icon);
+    if (font) DeleteObject(font);
+}
+
+namespace {
 
 std::wstring field_text(const Field& f) {
     switch (f.kind) {
@@ -124,7 +249,7 @@ void read_controls(State* st) {
     for (size_t i = 0; i < st->fields.size(); ++i) {
         const Field& f = st->fields[i];
         if (f.kind == Kind::Bool) {
-            *(bool*)f.ptr = SendMessageW(st->ctrl[i], BM_GETCHECK, 0, 0) == BST_CHECKED;
+            *(bool*)f.ptr = f.available && SendMessageW(st->ctrl[i], BM_GETCHECK, 0, 0) == BST_CHECKED;
             continue;
         }
         GetWindowTextW(st->ctrl[i], buf, ARRAYSIZE(buf));
@@ -211,8 +336,10 @@ void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
                                           S(wide ? kWidth - kLabelW - 44 : kCtrlW), S(23), hwnd, id, inst, nullptr);
         }
         theme::apply_control(st->ctrl[i], f.kind != Kind::Bool);
+        if (!f.available) EnableWindow(st->ctrl[i], FALSE);
         if (!wide) {
-            HWND hint = CreateWindowExW(0, L"STATIC", tr(f.hint), WS_CHILD | WS_VISIBLE, S(kHintX), S(y + 5),
+            const Str hint_id = f.available ? f.hint : f.unavailable;
+            HWND hint = CreateWindowExW(0, L"STATIC", tr(hint_id), WS_CHILD | WS_VISIBLE, S(kHintX), S(y + 5),
                                         S(kWidth - kHintX - 16), S(18), hwnd, nullptr, inst, nullptr);
             st->hints.push_back(hint);
         }

@@ -179,6 +179,26 @@ const wchar_t* const kText[S_COUNT][kLangCount] = {
     {L"run cpulytics at logon, for this user", L"ejecutar cpulytics al iniciar sesión",
      L"запускать cpulytics при входе в систему", L"登录时启动 cpulytics", L"サインイン時に cpulytics を起動",
      L"로그인할 때 cpulytics 실행", L"تشغيل cpulytics عند تسجيل الدخول"},
+
+    {L"this cpu has no efficiency cores", L"esta cpu no tiene núcleos de eficiencia",
+     L"у этого процессора нет энергоэффективных ядер", L"此 CPU 没有能效核心",
+     L"この cpu には効率コアがありません", L"이 cpu에는 효율 코어가 없습니다",
+     L"لا يحتوي هذا المعالج على أنوية موفرة للطاقة"},
+
+    // about
+    {L"About", L"Acerca de", L"О программе", L"关于", L"バージョン情報", L"정보", L"حول"},
+    {L"Watches what eats the cpu and lowers its priority, quietly.",
+     L"Vigila qué consume la cpu y baja su prioridad, sin ruido.",
+     L"Следит, что ест процессор, и тихо понижает приоритет.", L"监视谁在吃 CPU，并悄悄降低它的优先级。",
+     L"CPU を食っているものを見張り、そっと優先度を下げます。",
+     L"CPU를 먹는 프로세스를 지켜보고 조용히 우선순위를 낮춥니다.",
+     L"يراقب ما يستهلك المعالج ويخفض أولويته بهدوء."},
+    {L"MIT License - free to use, change and share",
+     L"Licencia MIT - libre de usar, modificar y compartir",
+     L"Лицензия MIT - свободно использовать, изменять и распространять",
+     L"MIT 许可证 - 可自由使用、修改和分发", L"MIT ライセンス - 自由に使用、改変、配布できます",
+     L"MIT 라이선스 - 자유롭게 사용, 수정, 배포", L"رخصة MIT - حر في الاستخدام والتعديل والمشاركة"},
+    {L"Close", L"Cerrar", L"Закрыть", L"关闭", L"閉じる", L"닫기", L"إغلاق"},
 };
 
 int g_lang = kEn;

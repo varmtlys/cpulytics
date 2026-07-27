@@ -221,6 +221,33 @@ bool set_autostart(bool on, const wchar_t* name) {
     return st == ERROR_SUCCESS;
 }
 
+bool has_efficiency_cores() {
+    static const bool hybrid = [] {
+        ULONG size = 0;
+        GetSystemCpuSetInformation(nullptr, 0, &size, GetCurrentProcess(), 0);
+        if (!size) return false;
+        std::vector<char> buf(size);
+        auto* info = reinterpret_cast<SYSTEM_CPU_SET_INFORMATION*>(buf.data());
+        if (!GetSystemCpuSetInformation(info, size, &size, GetCurrentProcess(), 0)) return false;
+
+        // The list is a sequence of variable sized records; one efficiency class
+        // for all of them means every core is the same kind.
+        int first = -1;
+        for (ULONG off = 0; off + sizeof(SYSTEM_CPU_SET_INFORMATION) <= size;) {
+            const auto* e = reinterpret_cast<const SYSTEM_CPU_SET_INFORMATION*>(buf.data() + off);
+            if (!e->Size) break;
+            if (e->Type == CpuSetInformation) {
+                const int klass = e->CpuSet.EfficiencyClass;
+                if (first < 0) first = klass;
+                else if (klass != first) return true;
+            }
+            off += e->Size;
+        }
+        return false;
+    }();
+    return hybrid;
+}
+
 bool is_elevated() {
     HANDLE token = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
