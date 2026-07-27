@@ -72,12 +72,23 @@ Nothing else is fetched: the app links against system libraries only
 (`user32`, `gdi32`, `shell32`, `comctl32`, `advapi32`, `uxtheme`, `dwmapi`).
 
 **If you have neither**, the script offers to fetch one: it asks first, naming the
-package, the url and the size, and only downloads after a yes. The archive is a
-portable MinGW-w64 (WinLibs, ~260 MB zip), it is verified against the sha256
-published next to it, unpacked into `build	oolchain` and used from there - nothing
-is installed system wide and nothing is put on your PATH. Later builds reuse it
-without asking. `-Fetch` answers yes in advance, for unattended use; in a non
-interactive session or with `CI` set nothing is ever downloaded without it.
+package, the url, the size and where it will go, and only downloads after a yes.
+
+The archive is a portable MinGW-w64 (WinLibs). It takes the `.7z` (~104 MB, half
+the size of the `.zip`) whenever the `tar.exe` that ships with Windows is there to
+unpack it, verifies it against the sha256 published next to it, and unpacks it into
+`%LOCALAPPDATA%\cpulytics	oolchain` - **outside the repository**, so cleaning
+`build\` or deleting the clone never throws it away, and a second clone reuses it.
+Later builds pick it up silently. Set `CPULYTICS_TOOLCHAIN` to put it elsewhere.
+
+The toolchain is published as one archive, so there is nothing to pick and choose
+at download time; what the build can do is drop the parts it will never call -
+the debugger, the fortran compiler, the documentation and the translations - which
+takes about 90 MB off after unpacking.
+
+Nothing is installed system wide, nothing is written to your PATH and no
+administrator right is needed. `-Fetch` answers yes in advance, for unattended use;
+in a non interactive session or with `CI` set nothing is downloaded without it.
 
 **MinGW-w64** is the simplest way in, and the one used for the x64 build. Any of
 these works, as long as `g++.exe`, `gcc.exe` and `windres.exe` end up in the same

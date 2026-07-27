@@ -61,7 +61,7 @@ function Find-Mingw {
     $dirs += 'C:\ProgramData\mingw64\mingw64\bin', 'C:\mingw64\bin', 'C:\msys64\mingw64\bin',
              'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
     # A toolchain downloaded by an earlier run is used again without asking.
-    $cached = Get-ChildItem (Join-Path $root 'build\toolchain') -Recurse -Filter 'g++.exe' -ErrorAction SilentlyContinue
+    $cached = Get-ChildItem (Get-ToolchainRoot) -Recurse -Filter 'g++.exe' -ErrorAction SilentlyContinue
     foreach ($exe in $cached) { $dirs += Split-Path $exe.FullName -Parent }
     foreach ($d in $dirs) {
         if (Test-MingwDir $d) { return $d }
@@ -69,15 +69,60 @@ function Find-Mingw {
     return $null
 }
 
-# Downloads a portable mingw-w64 (WinLibs) into build\toolchain, after asking.
-# Nothing is ever downloaded without a yes, and nothing is installed system wide.
+# Where a downloaded toolchain lives. Outside the repository on purpose: cleaning
+# build\ or deleting the clone must not throw away a toolchain that took minutes
+# to fetch, and a second clone reuses the same one.
+function Get-ToolchainRoot {
+    if ($env:CPULYTICS_TOOLCHAIN) { return $env:CPULYTICS_TOOLCHAIN }
+    return (Join-Path $env:LOCALAPPDATA 'cpulytics\toolchain')
+}
+
+# Parts of a gcc distribution this project never uses. Removing them is the only
+# trimming that is possible: the toolchain is published as one archive, there are
+# no per component downloads.
+$script:Unused = @(
+    'bin\gdb.exe', 'bin\gdbserver.exe', 'bin\gdb-add-index.exe', 'bin\gcore.exe', 'share\gdb',
+    'bin\gfortran.exe', 'bin\x86_64-w64-mingw32-gfortran.exe', 'bin\i686-w64-mingw32-gfortran.exe',
+    'share\doc', 'share\man', 'share\info', 'share\locale', 'share\gcc-*'
+)
+
+function Remove-UnusedParts($dir) {
+    $freed = 0
+    foreach ($rel in $script:Unused) {
+        foreach ($item in (Get-ChildItem (Join-Path $dir $rel) -Force -ErrorAction SilentlyContinue)) {
+            $size = (Get-ChildItem $item.FullName -Recurse -File -Force -ErrorAction SilentlyContinue |
+                     Measure-Object -Property Length -Sum).Sum
+            Remove-Item $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            if ($size) { $freed += $size }
+        }
+    }
+    # f951 is the fortran compiler proper, next to the c and c++ ones.
+    foreach ($f in (Get-ChildItem (Join-Path $dir 'libexec') -Recurse -Filter 'f951.exe' -ErrorAction SilentlyContinue)) {
+        $freed += $f.Length
+        Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+    }
+    if ($freed) { Write-Host ("  removed {0} MB of parts this build never uses" -f [math]::Round($freed / 1MB)) }
+}
+
+# The tar that ships with windows is libarchive, which reads 7z. A tar from git
+# or msys on the PATH is gnu tar, which does not, so it is addressed by full path.
+function Get-Bsdtar {
+    $t = Join-Path $env:SystemRoot 'System32\tar.exe'
+    if (-not (Test-Path $t)) { return $null }
+    $v = & $t --version 2>$null
+    if ("$v" -match 'bsdtar') { return $t }
+    return $null
+}
+
+# Downloads a portable mingw-w64 (WinLibs) into the toolchain directory, after
+# asking. Nothing is installed system wide and nothing is put on the user PATH.
 function Get-Mingw {
-    $pattern = if ($Arch -eq 'x86') { '^winlibs-i686-posix-dwarf-gcc-.*ucrt.*\.zip$' }
-               else { '^winlibs-x86_64-posix-seh-gcc-.*ucrt.*\.zip$' }
     if ($Arch -eq 'arm64') {
         Write-Host '  no mingw cross compiler for arm64 exists as a download, use msvc' -ForegroundColor Yellow
         return $null
     }
+    $pattern = if ($Arch -eq 'x86') { '^winlibs-i686-posix-dwarf-gcc-.*ucrt.*' }
+               else { '^winlibs-x86_64-posix-seh-gcc-.*ucrt.*' }
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $repo = 'brechtsanders/winlibs_mingw'
@@ -88,18 +133,26 @@ function Get-Mingw {
         Write-Host "  could not reach github: $($_.Exception.Message)" -ForegroundColor Yellow
         return $null
     }
-    $asset = $release.assets | Where-Object { $_.name -match $pattern } | Sort-Object size | Select-Object -First 1
+
+    # The .7z is less than half the size of the .zip, and tar.exe (libarchive)
+    # ships with windows 10 and 11, so it is the first choice.
+    $assets = $release.assets | Where-Object { $_.name -match ($pattern + '\.(7z|zip)$') }
+    $sevenZip = $assets | Where-Object { $_.name -like '*.7z' } | Select-Object -First 1
+    $zip = $assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+    $bsdtar = Get-Bsdtar
+    $asset = if ($bsdtar -and $sevenZip) { $sevenZip } else { $zip }
     if (-not $asset) {
         Write-Host "  no matching build in $repo $($release.tag_name)" -ForegroundColor Yellow
         return $null
     }
 
-    $mb = [math]::Round($asset.size / 1MB)
+    $dest = Get-ToolchainRoot
     Write-Host ''
-    Write-Host "No C++ toolchain was found on this machine."
+    Write-Host 'No C++ toolchain was found on this machine.'
     Write-Host "  package : mingw-w64 $($release.tag_name) (WinLibs, portable, no installer)"
     Write-Host "  from    : $($asset.browser_download_url)"
-    Write-Host "  size    : $mb MB, unpacked into build\toolchain and used only by this build"
+    Write-Host ("  size    : {0} MB download" -f [math]::Round($asset.size / 1MB))
+    Write-Host "  into    : $dest  (kept for later builds)"
     if (-not $Fetch) {
         if ($env:CI -or -not [Environment]::UserInteractive) {
             Write-Host '  not asking in a non interactive session, pass -Fetch to allow it' -ForegroundColor Yellow
@@ -108,44 +161,54 @@ function Get-Mingw {
         if ((Read-Host 'Download it? [y/N]') -notmatch '^(y|yes)$') { return $null }
     }
 
-    $cache = Join-Path $root 'build\toolchain'
-    New-Item -ItemType Directory -Force $cache | Out-Null
-    $zip = Join-Path $cache $asset.name
+    New-Item -ItemType Directory -Force $dest | Out-Null
+    $archive = Join-Path $dest $asset.name
     Write-Host "  downloading $($asset.name) ..."
     $progress = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'  # the progress bar makes this many times slower
     try {
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive -UseBasicParsing
     } catch {
         $ProgressPreference = $progress
         Write-Host "  download failed: $($_.Exception.Message)" -ForegroundColor Yellow
         return $null
     }
-    $ProgressPreference = $progress
 
     # Every archive is published with a .sha256 next to it, so the download is
     # verified instead of trusted.
     $sum = $release.assets | Where-Object { $_.name -eq ($asset.name + '.sha256') } | Select-Object -First 1
     if ($sum) {
-        # -UseBasicParsing hands back raw bytes for a text/plain body
         $body = (Invoke-WebRequest -Uri $sum.browser_download_url -UseBasicParsing).Content
         $text = if ($body -is [byte[]]) { [Text.Encoding]::ASCII.GetString($body) } else { [string]$body }
         if ($text -match '([0-9a-fA-F]{64})') {
             $want = $matches[1].ToLower()
-            $got = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+            $got = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
             if ($got -ne $want) {
-                Remove-Item $zip -Force
+                Remove-Item $archive -Force
+                $ProgressPreference = $progress
                 throw "the downloaded archive does not match the published sha256 ($got)"
             }
             Write-Host '  sha256 ok'
         }
     }
+    $ProgressPreference = $progress
 
     Write-Host '  unpacking ...'
-    Expand-Archive -Path $zip -DestinationPath $cache -Force
-    Remove-Item $zip -Force
+    if ($archive -like '*.7z') {
+        & $bsdtar -xf $archive -C $dest
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '  tar could not read the 7z archive' -ForegroundColor Yellow
+            Remove-Item $archive -Force
+            return $null
+        }
+    } else {
+        Expand-Archive -Path $archive -DestinationPath $dest -Force
+    }
+    Remove-Item $archive -Force
+
     $found = Find-Mingw
-    if (-not $found) { throw "the downloaded archive did not contain g++, gcc and windres" }
+    if (-not $found) { throw 'the downloaded archive did not contain g++, gcc and windres' }
+    Remove-UnusedParts (Split-Path $found -Parent)
     return $found
 }
 
