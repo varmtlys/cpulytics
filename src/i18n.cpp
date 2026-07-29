@@ -199,6 +199,12 @@ const wchar_t* const kText[S_COUNT][kLangCount] = {
      L"MIT 许可证 - 可自由使用、修改和分发", L"MIT ライセンス - 自由に使用、改変、配布できます",
      L"MIT 라이선스 - 자유롭게 사용, 수정, 배포", L"رخصة MIT - حر في الاستخدام والتعديل والمشاركة"},
     {L"Close", L"Cerrar", L"Закрыть", L"关闭", L"閉じる", L"닫기", L"إغلاق"},
+
+    // theme picker
+    {L"Theme", L"Tema", L"Тема", L"主题", L"テーマ", L"테마", L"السمة"},
+    {L"System", L"Del sistema", L"Системная", L"跟随系统", L"システムに従う", L"시스템 설정", L"النظام"},
+    {L"Dark", L"Oscuro", L"Тёмная", L"深色", L"ダーク", L"어두운", L"داكن"},
+    {L"Light", L"Claro", L"Светлая", L"浅色", L"ライト", L"밝은", L"فاتح"},
 };
 
 int g_lang = kEn;

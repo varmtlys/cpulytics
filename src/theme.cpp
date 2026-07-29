@@ -3,6 +3,8 @@
 #include <dwmapi.h>
 #include <uxtheme.h>
 
+#include "i18n.h"
+
 namespace cpulytics {
 namespace theme {
 namespace {
@@ -35,6 +37,9 @@ constexpr DWORD kCornerRound = 2;          // DWMWCP_ROUND
 const Palette kDark{RGB(32, 32, 32), RGB(45, 45, 45), RGB(240, 240, 240), RGB(160, 160, 160), RGB(60, 60, 60)};
 const Palette kLight{RGB(243, 243, 243), RGB(255, 255, 255), RGB(26, 26, 26), RGB(96, 96, 96), RGB(210, 210, 210)};
 
+enum { kSystem, kDarkMode, kLightMode };
+int g_mode = kSystem;
+
 HBRUSH g_window = nullptr;
 HBRUSH g_surface = nullptr;
 bool g_dark_cached = false;
@@ -49,9 +54,24 @@ void refresh_brushes(bool is_dark) {
     g_dark_cached = is_dark;
 }
 
+const wchar_t* const kModes[] = {L"system", L"dark", L"light", nullptr};
+
 }  // namespace
 
+void set_mode(const std::wstring& code) {
+    g_mode = code == L"dark" ? kDarkMode : code == L"light" ? kLightMode : kSystem;
+}
+
+const wchar_t* const* modes() { return kModes; }
+
+const wchar_t* mode_name(size_t i) {
+    const Str ids[] = {S_THEME_SYSTEM, S_THEME_DARK, S_THEME_LIGHT};
+    return i < 3 ? tr(ids[i]) : L"";
+}
+
 bool dark() {
+    if (g_mode == kDarkMode) return true;
+    if (g_mode == kLightMode) return false;
     DWORD value = 1;  // the key is missing on older windows, which is light
     DWORD size = sizeof(value);
     RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
@@ -76,7 +96,12 @@ void init_process() {
     if (!ux) return;
     auto set_mode = (SetPreferredAppMode_t)(void*)GetProcAddress(ux, MAKEINTRESOURCEA(135));
     auto flush = (FlushMenuThemes_t)(void*)GetProcAddress(ux, MAKEINTRESOURCEA(136));
-    if (set_mode) set_mode(AppMode::AllowDark);  // follow the system, do not force
+    // The popup menu follows this: forcing it is what makes the tray menu dark on
+    // a light system when the user asked for dark.
+    const AppMode want = g_mode == kDarkMode    ? AppMode::ForceDark
+                         : g_mode == kLightMode ? AppMode::ForceLight
+                                                : AppMode::AllowDark;
+    if (set_mode) set_mode(want);
     if (flush) flush();
 }
 

@@ -36,6 +36,8 @@ struct Config {
     bool log_enabled = true;
     // ui language: auto, en, es, ru, zh, ja, ko, ar
     std::wstring language = L"auto";
+    // ui theme: system, dark, light
+    std::wstring theme = L"system";
 
     // safety limits
     int max_tracked = 2048;          // hard cap on the history map

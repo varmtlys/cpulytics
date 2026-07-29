@@ -177,9 +177,9 @@ next to each of them and a tooltip with the allowed range and the default. The
 interface speaks English, Spanish, Russian, Chinese, Japanese, Korean and Arabic
 (mirrored layout); "Auto" follows the Windows display language.
 
-The window and the tray menu follow the Windows light and dark setting, including
-the title bar and the rounded Windows 11 corners, and switch over as soon as the
-system does. The application manifest asks for common controls 6 and per monitor
+The window and the tray menu follow the Windows light and dark setting by default,
+including the title bar and the rounded Windows 11 corners, and switch over as soon
+as the system does. The Theme row overrides that with a fixed dark or light. The application manifest asks for common controls 6 and per monitor
 v2 dpi awareness, so the window is themed and sharp on a scaled display.
 
 The same values live in `%APPDATA%\cpulytics\config.ini`, written with comments on
@@ -340,6 +340,10 @@ to, this file is the answer: no `demote:` line means no process ever crossed
 
 **`language`** - `auto` follows the windows display language, or force one of
 `en`, `es`, `ru`, `zh`, `ja`, `ko`, `ar`. Arabic mirrors the settings window.
+
+**`theme`** - `system` follows the windows light and dark setting and changes with
+it while the app runs; `dark` and `light` pin it. It covers the settings window,
+the about window and the tray menu, title bars and all.
 
 ### Limits and exceptions
 

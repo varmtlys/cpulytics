@@ -63,6 +63,7 @@ constexpr int kHintX = kLabelW + kCtrlW + 24;
 constexpr int kWidth = 660;
 constexpr int kIdFirst = 1000;
 constexpr int kIdLang = 900;
+constexpr int kIdTheme = 901;
 constexpr int kIdSave = IDOK;        // Enter saves
 constexpr int kIdCancel = IDCANCEL;  // Escape closes
 constexpr int kIdDefaults = 3;
@@ -304,23 +305,38 @@ void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
     SendMessageW(st->tooltip, TTM_SETMAXTIPWIDTH, 0, S(420));  // also enables the line break
     SendMessageW(st->tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP, 20000);
 
-    // Language picker on the first row: changing it rebuilds the window.
-    CreateWindowExW(0, L"STATIC", tr(S_LANGUAGE), WS_CHILD | WS_VISIBLE | SS_RIGHT, S(8), S(17), S(kLabelW), S(18),
-                    hwnd, nullptr, inst, nullptr);
-    HWND combo = CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-                                 S(kLabelW + 14), S(12), S(200), S(280), hwnd, (HMENU)(INT_PTR)kIdLang, inst, nullptr);
-    theme::apply_control(combo, true);
-    const wchar_t* const* codes = language_codes();
-    int selected = 0;
-    for (int i = 0; codes[i]; ++i) {
-        SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)language_name((size_t)i));
-        if (st->cfg.language == codes[i]) selected = i;
+    // Language and theme on the first two rows. Both change how the window itself
+    // looks, so picking one rebuilds it rather than trying to repaint in place.
+    const struct {
+        Str label;
+        int id;
+        const wchar_t* const* codes;
+        const wchar_t* (*name)(size_t);
+        const std::wstring* value;
+    } pickers[] = {
+        {S_LANGUAGE, kIdLang, language_codes(), language_name, &st->cfg.language},
+        {S_THEME, kIdTheme, theme::modes(), theme::mode_name, &st->cfg.theme},
+    };
+    for (int row = 0; row < 2; ++row) {
+        const auto& p = pickers[row];
+        const int y = 12 + row * kRowH;
+        CreateWindowExW(0, L"STATIC", tr(p.label), WS_CHILD | WS_VISIBLE | SS_RIGHT, S(8), S(y + 5), S(kLabelW), S(18),
+                        hwnd, nullptr, inst, nullptr);
+        HWND combo =
+            CreateWindowExW(0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+                            S(kLabelW + 14), S(y), S(200), S(280), hwnd, (HMENU)(INT_PTR)p.id, inst, nullptr);
+        theme::apply_control(combo, true);
+        int selected = 0;
+        for (int i = 0; p.codes[i]; ++i) {
+            SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)p.name((size_t)i));
+            if (*p.value == p.codes[i]) selected = i;
+        }
+        SendMessageW(combo, CB_SETCURSEL, selected, 0);
     }
-    SendMessageW(combo, CB_SETCURSEL, selected, 0);
 
     for (int i = 0; i < count; ++i) {
         const Field& f = st->fields[i];
-        const int y = 12 + (i + 1) * kRowH + 10;
+        const int y = 12 + (i + 2) * kRowH + 10;
         const bool wide = f.kind == Kind::Text;
         const HMENU id = (HMENU)(INT_PTR)(kIdFirst + i);
 
@@ -352,7 +368,7 @@ void create_controls(HWND hwnd, HINSTANCE inst, State* st) {
         add_tip(st, st->ctrl[i], hwnd, tip);
     }
 
-    const int by = 12 + (count + 1) * kRowH + 10 + 18;
+    const int by = 12 + (count + 2) * kRowH + 10 + 18;
     const struct {
         const wchar_t* text;
         int x;
@@ -383,12 +399,17 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (st) {
         switch (msg) {
             case WM_COMMAND:
-                if (LOWORD(wp) == kIdLang && HIWORD(wp) == CBN_SELCHANGE) {
+                if ((LOWORD(wp) == kIdLang || LOWORD(wp) == kIdTheme) && HIWORD(wp) == CBN_SELCHANGE) {
                     const int sel = (int)SendMessageW((HWND)lp, CB_GETCURSEL, 0, 0);
                     if (sel >= 0) {
                         read_controls(st);  // keep whatever the user typed so far
-                        st->cfg.language = language_codes()[sel];
-                        set_language(st->cfg.language);
+                        if (LOWORD(wp) == kIdLang) {
+                            st->cfg.language = language_codes()[sel];
+                            set_language(st->cfg.language);
+                        } else {
+                            st->cfg.theme = theme::modes()[sel];
+                            theme::set_mode(st->cfg.theme);
+                        }
                         st->relaunch = true;
                         DestroyWindow(hwnd);
                     }
@@ -406,10 +427,11 @@ LRESULT CALLBACK settings_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                         return 0;
                     case kIdDefaults: {
                         const bool keep = st->cfg.enabled;
-                        const std::wstring lang = st->cfg.language;
+                        const std::wstring lang = st->cfg.language, ui_theme = st->cfg.theme;
                         st->cfg = Config{};
                         st->cfg.enabled = keep;
                         st->cfg.language = lang;
+                        st->cfg.theme = ui_theme;
                         fill_controls(st);
                         return 0;
                     }
@@ -480,7 +502,7 @@ bool run_window(HINSTANCE inst, State& st, bool& quit) {
     lf.lfHeight = MulDiv(lf.lfHeight, st.dpi, 96);
     st.font = CreateFontIndirectW(&lf);
 
-    const int height = 12 + ((int)st.fields.size() + 1) * kRowH + 10 + 18 + 30 + 22;
+    const int height = 12 + ((int)st.fields.size() + 2) * kRowH + 10 + 18 + 30 + 22;
     RECT r{0, 0, st.s(kWidth), st.s(height)};
     AdjustWindowRect(&r, style, FALSE);
     SetWindowPos(hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
@@ -542,7 +564,9 @@ bool show_settings(HINSTANCE inst, Config& cfg) {
         if (run_window(inst, st, quit)) break;
     }
     if (st.saved) cfg = st.cfg;
-    set_language(cfg.language);  // a cancelled language change must not stick
+    // A cancelled pick must not stick.
+    set_language(cfg.language);
+    theme::set_mode(cfg.theme);
     return st.saved;
 }
 

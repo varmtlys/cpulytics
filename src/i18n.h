@@ -56,6 +56,8 @@ enum Str {
     S_H_ECO_NO_CORES,
     // about
     S_ABOUT, S_ABOUT_TAGLINE, S_ABOUT_LICENSE, S_CLOSE,
+    // theme picker
+    S_THEME, S_THEME_SYSTEM, S_THEME_DARK, S_THEME_LIGHT,
     S_COUNT
 };
 

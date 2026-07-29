@@ -150,9 +150,10 @@ void App::add_icon() {
 
 bool App::init(HINSTANCE inst) {
     inst_ = inst;
-    theme::init_process();  // dark popup menus and dark controls when windows is dark
     cfg_ = Config::load();
     set_language(cfg_.language);
+    theme::set_mode(cfg_.theme);
+    theme::init_process();  // dark popup menus and dark controls, per the chosen theme
     // The setting is the truth: this repairs the entry after the exe was moved,
     // and clears it if the file was edited by hand.
     sys::set_autostart(cfg_.autostart);
@@ -247,6 +248,8 @@ void App::recover_state() {
 void App::reload_config() {
     cfg_ = Config::load();
     set_language(cfg_.language);
+    theme::set_mode(cfg_.theme);
+    theme::init_process();
     sys::set_autostart(cfg_.autostart);
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);
     engine_->set_config(cfg_);
@@ -260,6 +263,8 @@ void App::reload_config() {
 // Settings live in their own window; the sampling timer keeps running behind it.
 void App::open_settings() {
     if (!show_settings(inst_, cfg_)) return;
+    theme::set_mode(cfg_.theme);
+    theme::init_process();
     engine_->set_config(cfg_);
     if (!sys::set_autostart(cfg_.autostart)) log_.write(L"could not change the autostart entry");
     log_.configure(cfg_.log_enabled, cfg_.log_max_kb);

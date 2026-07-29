@@ -111,6 +111,7 @@ Config Config::load() {
         else if (k == "restore_on_exit") c.restore_on_exit = as_bool(v, c.restore_on_exit);
         else if (k == "log_enabled") c.log_enabled = as_bool(v, c.log_enabled);
         else if (k == "language") c.language = lower(widen(trim(v)));
+        else if (k == "theme") c.theme = lower(widen(trim(v)));
         else if (k == "max_tracked") c.max_tracked = as_int(v, c.max_tracked);
         else if (k == "log_max_kb") c.log_max_kb = as_int(v, c.log_max_kb);
         else if (k == "whitelist") {
@@ -168,6 +169,9 @@ bool Config::save() const {
         << "fullscreen_max_steps = " << fullscreen_max_steps << "\n\n"
         << "; never demote the process that owns the foreground window\n"
         << "protect_foreground = " << (protect_foreground ? "true" : "false") << "\n"
+        << "; also mark demoted processes as low power (EcoQoS). Only has an effect\n"
+        << "; on a cpu with efficiency cores, where it is also the only place it is offered\n"
+        << "eco_qos = " << (eco_qos ? "true" : "false") << "\n"
         << "; show a balloon on every change\n"
         << "notifications = " << (notifications ? "true" : "false") << "\n"
         << "; restore every touched process when the app exits\n"
@@ -179,7 +183,11 @@ bool Config::save() const {
         << "; log is truncated once it grows past this, kilobytes\n"
         << "log_max_kb = " << log_max_kb << "\n\n"
         << "; comma separated executable names that are never touched\n"
-        << "whitelist = " << wl << "\n";
+        << "whitelist = " << wl << "\n\n"
+        << "; interface language: auto (follows windows), en, es, ru, zh, ja, ko, ar\n"
+        << "language = " << narrow(language) << "\n"
+        << "; interface theme: system (follows windows), dark, light\n"
+        << "theme = " << narrow(theme) << "\n";
     return out.good();
 }
 

@@ -199,6 +199,7 @@ void test_every_string_is_translated() {
     CHECK(std::wstring(tr(S_ALREADY_RUNNING)) == L"cpulytics is already running");
     CHECK(std::wstring(tr(S_L_AUTOSTART)) == L"Start with Windows");
     CHECK(std::wstring(tr(S_ABOUT)) == L"About");
+    CHECK(std::wstring(tr(S_THEME)) == L"Theme");
 }
 
 // EcoQoS is a windows 11 / 10 21H1 feature; on anything older it simply cannot be
@@ -239,6 +240,17 @@ void test_theme_palette_and_dpi() {
     CHECK(theme::window_brush() != nullptr);
     CHECK(theme::surface_brush() != nullptr);
     CHECK(theme::dpi_of(nullptr) >= 96);
+
+    // The mode overrides the system setting, and anything unknown means system.
+    const bool system_says = (theme::set_mode(L"system"), theme::dark());
+    theme::set_mode(L"dark");
+    CHECK(theme::dark());
+    CHECK(theme::palette().window != theme::palette().text);
+    theme::set_mode(L"light");
+    CHECK(!theme::dark());
+    theme::set_mode(L"nonsense");
+    CHECK(theme::dark() == system_says);
+    theme::set_mode(L"system");
 
     // Nothing here may crash on a window that is not themed at all.
     HWND w = CreateWindowExW(0, L"STATIC", L"x", WS_POPUP, 0, 0, 10, 10, nullptr, nullptr, nullptr, nullptr);

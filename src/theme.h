@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <string>
+
 namespace cpulytics {
 namespace theme {
 
@@ -14,8 +16,14 @@ struct Palette {
     COLORREF border;
 };
 
-// Reads AppsUseLightTheme every time it is called: the setting can change while
-// the app runs, and the settings window rebuilds itself when it does.
+// "system" follows AppsUseLightTheme, "dark" and "light" force one. Anything else
+// is taken as "system".
+void set_mode(const std::wstring& code);
+const wchar_t* const* modes();       // "system", "dark", "light", nullptr
+const wchar_t* mode_name(size_t i);  // translated, for the picker
+
+// Follows the mode above, and re-reads the system setting every time when that is
+// what the mode says: it can change while the app runs.
 bool dark();
 const Palette& palette();
 
