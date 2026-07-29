@@ -22,21 +22,21 @@ jobs:
           arch: amd64
       - name: Build and test x64
         shell: pwsh
-        run: .\scripts\build.ps1 -Arch x64 -Test
+        run: .\scripts\build.ps1 --arch x64 --test
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
       - name: Build and test x86
         shell: pwsh
-        run: .\scripts\build.ps1 -Arch x86 -Test
+        run: .\scripts\build.ps1 --arch x86 --test
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_arm64
       - name: Build arm64
         shell: pwsh
-        run: .\scripts\build.ps1 -Arch arm64 -Test  # cross build, the tests only compile here
+        run: .\scripts\build.ps1 --arch arm64 --test  # cross build, the tests only compile here
 
       - name: Package
         shell: pwsh

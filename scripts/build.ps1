@@ -1,32 +1,144 @@
 <#
-    Builds cpulytics.exe into build\<arch>\ and, with -Test, the test binaries too.
-    Uses MSVC (cl) when it is on PATH, otherwise MinGW g++.
+    Builds cpulytics.exe into build\<arch>\, and the test binaries with --test.
+    Uses MSVC (cl and rc) when they are on PATH, otherwise MinGW g++ and windres.
 
-        .\scripts\build.ps1                # x64 release build
-        .\scripts\build.ps1 -Arch x86      # 32 bit build
-        .\scripts\build.ps1 -Test          # build and run the tests
-        .\scripts\build.ps1 -Fetch         # download a toolchain if none is installed
+        ./scripts/build.ps1                   build for this machine
+        ./scripts/build.ps1 --arch x86        build 32 bit
+        ./scripts/build.ps1 --all --test      build every architecture and test it
+        ./scripts/build.ps1 -h                the full list of options
 
-    With MSVC the architecture comes from the developer prompt the script runs in
-    (vcvars64, vcvarsall x86, vcvarsall x64_arm64), so -Arch only has to agree with
-    it. With g++ it is -m64 / -m32, the 32 bit build needs a multilib toolchain, and
-    arm64 needs an aarch64 cross compiler - arm64 is normally built with MSVC.
+    With MSVC the architecture comes from the developer prompt the script runs in,
+    so --arch has to agree with it; --all opens the right prompt for each target by
+    itself. With g++ it is -m64 / -m32, the 32 bit build needs a multilib toolchain,
+    and arm64 needs an aarch64 cross compiler - arm64 is normally built with MSVC.
 
-    An arm64 build made on an x64 machine is a cross build: it is compiled but its
-    tests are not run there, they run on arm64 hardware.
+    A build for another architecture than this machine is a cross build: it is
+    compiled but its tests are not run here.
 #>
-[CmdletBinding()]
-param(
-    [ValidateSet('x64', 'x86', 'arm64')]
-    [string]$Arch = 'x64',
-    [switch]$Test,
-    [switch]$Run,
-    # Answers yes to the "download a toolchain?" question, for unattended use.
-    [switch]$Fetch
-)
+
+# Unix style options, parsed by hand: powershell would otherwise want -Arch.
+$Arch = ''
+$All = $false
+$Test = $false
+$Run = $false
+$Fetch = $false
+
+function Show-Usage {
+    Write-Host @'
+usage: build.ps1 [options]
+
+  -a, --arch <x64|x86|arm64>  build for one architecture (default: this machine)
+      --all                   build every architecture that can be built here
+  -t, --test                  run both test suites after building
+  -r, --run                   start cpulytics after building
+  -f, --fetch                 download a toolchain without asking, if none is found
+  -h, --help                  show this text
+'@
+}
+
+for ($i = 0; $i -lt $args.Count; ++$i) {
+    switch -regex ($args[$i]) {
+        '^(-a|--arch)$' { $Arch = "$($args[++$i])"; break }
+        '^--arch=(.+)$' { $Arch = $matches[1]; break }
+        '^--all$'       { $All = $true; break }
+        '^(-t|--test)$' { $Test = $true; break }
+        '^(-r|--run)$'  { $Run = $true; break }
+        '^(-f|--fetch)$' { $Fetch = $true; break }
+        '^(-h|--help)$' { Show-Usage; exit 0 }
+        default {
+            Write-Host "build.ps1: unknown option '$($args[$i])'" -ForegroundColor Yellow
+            Show-Usage
+            exit 2
+        }
+    }
+}
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+
+# What this machine runs. A 32 bit shell on a 64 bit windows reports x86 in
+# PROCESSOR_ARCHITECTURE and the truth in PROCESSOR_ARCHITEW6432.
+function Get-HostArch {
+    $a = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    switch ($a) {
+        'ARM64' { return 'arm64' }
+        'x86'   { return 'x86' }
+        default { return 'x64' }
+    }
+}
+
+if (-not $Arch) { $Arch = Get-HostArch }
+if (@('x64', 'x86', 'arm64') -notcontains $Arch) {
+    Write-Host "build.ps1: unknown architecture '$Arch'" -ForegroundColor Yellow
+    Show-Usage
+    exit 2
+}
+
+# --all runs this script once per architecture. With MSVC each target needs its own
+# developer environment, so the child is started through vcvarsall.
+if ($All) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $vcvarsall = $null
+    if (Test-Path $vswhere) {
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                             -property installationPath 2>$null
+        if ($vsPath) {
+            $candidate = Join-Path "$vsPath" 'VC\Auxiliary\Build\vcvarsall.bat'
+            if (Test-Path $candidate) { $vcvarsall = $candidate }
+        }
+    }
+
+    # vcvarsall happily leaves the previous environment in place when a toolset is
+    # not installed, and the build then compiles x64 objects for an arm64 link. So
+    # the toolset is looked for before the target is attempted.
+    function Test-MsvcTarget($vsPath, $hostArch, $target) {
+        if (-not $vsPath) { return $true }  # no msvc, the mingw path decides for itself
+        $hostDir = if ($hostArch -eq 'arm64') { 'Hostarm64' } else { 'Hostx64' }
+        $tools = Join-Path "$vsPath" 'VC\Tools\MSVC'
+        foreach ($v in (Get-ChildItem $tools -Directory -ErrorAction SilentlyContinue)) {
+            if (Test-Path (Join-Path $v.FullName "bin\$hostDir\$target\cl.exe")) { return $true }
+        }
+        return $false
+    }
+
+    $hostArch = Get-HostArch
+    $failed = @()
+    $skipped = @()
+    foreach ($target in @('x64', 'x86', 'arm64')) {
+        $childArgs = @('--arch', $target)
+        if ($Test) { $childArgs += '--test' }
+        if ($Fetch) { $childArgs += '--fetch' }
+
+        Write-Host ''
+        Write-Host "=== $target ===" -ForegroundColor Cyan
+        if ($vcvarsall -and -not (Test-MsvcTarget $vsPath $hostArch $target)) {
+            Write-Host "  no $target toolset installed, skipping (Visual Studio Installer, MSVC v143 $target build tools)" -ForegroundColor Yellow
+            $skipped += $target
+            continue
+        }
+        if ($vcvarsall) {
+            # host_target is what vcvarsall calls a cross build; x64 on x64 is just x64.
+            $pair = if ($hostArch -eq $target) { $target } else { "${hostArch}_${target}" }
+            $line = '"' + $vcvarsall + '" ' + $pair + ' >nul && powershell -NoProfile -ExecutionPolicy Bypass -File "' +
+                    $PSCommandPath + '" ' + ($childArgs -join ' ')
+            & cmd /c $line
+        } else {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath @childArgs
+        }
+        if ($LASTEXITCODE -ne 0) { $failed += $target }
+    }
+
+    Write-Host ''
+    if ($skipped.Count) { Write-Host ("skipped: " + ($skipped -join ', ')) -ForegroundColor Yellow }
+    if ($failed.Count) {
+        Write-Host ("failed: " + ($failed -join ', ')) -ForegroundColor Red
+        exit 1
+    }
+    $built = @('x64', 'x86', 'arm64') | Where-Object { $skipped -notcontains $_ }
+    Write-Host ("built: " + ($built -join ', ')) -ForegroundColor Green
+    exit 0
+}
+
 $build = Join-Path $root "build\$Arch"
 New-Item -ItemType Directory -Force $build | Out-Null
 

@@ -30,7 +30,7 @@ jobs:
 
       - name: Build and test
         shell: pwsh
-        run: .\scripts\build.ps1 -Arch ${{ matrix.arch }} -Test
+        run: .\scripts\build.ps1 --arch ${{ matrix.arch }} --test
 
       - uses: actions/upload-artifact@v4
         with:

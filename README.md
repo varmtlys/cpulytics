@@ -41,16 +41,27 @@ below the work you are actually doing.
 ## Build
 
 One script builds everything: `scripts\build.ps1`. It finds the toolchain itself,
-compiles the resources with the matching resource compiler and, with `-Test`, runs
-both test suites.
+compiles the resources with the matching resource compiler and, with `--test`, runs
+both test suites. Without arguments it builds for the architecture this machine
+runs.
 
 ```powershell
-.\scripts\build.ps1                # build\x64\cpulytics.exe
-.\scripts\build.ps1 -Arch x86      # build\x86\cpulytics.exe
-.\scripts\build.ps1 -Arch arm64    # build\arm64\cpulytics.exe (cross build)
-.\scripts\build.ps1 -Test          # build, then run both test suites
-.\scripts\build.ps1 -Run           # build and start it
+.\scripts\build.ps1                  # build for this machine
+.\scripts\build.ps1 --arch x86       # build 32 bit
+.\scripts\build.ps1 --all --test     # every architecture, with the test suites
+.\scripts\build.ps1 -h               # the full list of options
 ```
+
+| Option | Meaning |
+|---|---|
+| `-a`, `--arch <x64\|x86\|arm64>` | build one architecture; the default is what this machine runs |
+| `--all` | build every architecture, opening the right developer environment for each |
+| `-t`, `--test` | run both test suites after building |
+| `-r`, `--run` | start cpulytics after building |
+| `-f`, `--fetch` | download a toolchain without asking, if none is found |
+| `-h`, `--help` | usage |
+
+Output goes to `build\<arch>\cpulytics.exe`.
 
 From cmd.exe, or when the execution policy blocks the script:
 
@@ -87,7 +98,7 @@ the debugger, the fortran compiler, the documentation and the translations - whi
 takes about 90 MB off after unpacking.
 
 Nothing is installed system wide, nothing is written to your PATH and no
-administrator right is needed. `-Fetch` answers yes in advance, for unattended use;
+administrator right is needed. `--fetch` answers yes in advance, for unattended use;
 in a non interactive session or with `CI` set nothing is downloaded without it.
 
 **MinGW-w64** is the simplest way in, and the one used for the x64 build. Any of
@@ -122,9 +133,9 @@ optional *MSVC v143 - ARM64 build tools* component for arm64:
 
 Then build from a developer prompt, where `cl` and `rc` are on the PATH - the
 script prefers MSVC whenever it sees `cl`. The prompt decides the architecture, so
-it has to agree with `-Arch`:
+it has to agree with `--arch` (or just use `--all`, which does this for you):
 
-| Start menu entry | `-Arch` |
+| Start menu entry | `--arch` |
 |---|---|
 | x64 Native Tools Command Prompt for VS 2022 | `x64` (default) |
 | x86 Native Tools Command Prompt for VS 2022 | `x86` |
