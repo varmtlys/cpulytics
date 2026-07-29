@@ -409,9 +409,11 @@ every language.
 
 Versions are git tags: `vMAJOR.MINOR` for features, `vMAJOR.MINOR.PATCH` for fixes.
 Pushing a tag runs `.github/workflows/release.yml`, which builds and tests all
-three architectures, packages `cpulytics-<tag>-windows-x64.zip`,
-`cpulytics-<tag>-windows-x86.zip` and `cpulytics-<tag>-windows-arm64.zip`, and
-publishes a release with `RELEASE_NOTES.md` as its body.
+three architectures and publishes a release with `RELEASE_NOTES.md` as its body.
+The assets are the plain executables, one per architecture and named after it -
+`cpulytics-<tag>-windows-x64.exe`, `-x86.exe`, `-arm64.exe`. There is nothing to
+unpack: the binary carries its icon and manifest, needs no runtime and writes its
+settings to `%APPDATA%` on first run.
 
 ## What it can touch, and administrator rights
 
