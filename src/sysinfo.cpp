@@ -154,6 +154,9 @@ uint32_t foreground_pid() {
 uint32_t fullscreen_pid() {
     HWND w = GetForegroundWindow();
     if (!w || w == GetDesktopWindow() || w == GetShellWindow()) return 0;
+    // With an auto-hidden taskbar a maximised window also covers the monitor
+    // exactly; a game does not maximise, it resizes a borderless window.
+    if (IsZoomed(w)) return 0;
 
     RECT wr;
     if (!GetWindowRect(w, &wr)) return 0;

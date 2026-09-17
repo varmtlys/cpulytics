@@ -193,10 +193,9 @@ std::wstring field_text(const Field& f) {
     switch (f.kind) {
         case Kind::Int: return std::to_wstring(*(int*)f.ptr);
         case Kind::Real: {
-            wchar_t buf[32];
-            const double v = *(double*)f.ptr;
-            wsprintfW(buf, L"%d.%d", (int)v, (int)((v - (int)v) * 10 + 0.5));
-            return buf;
+            // Rounded to tenths as a whole, so 7.96 reads 8.0 and not 7.10.
+            const int tenths = (int)(*(double*)f.ptr * 10.0 + 0.5);
+            return std::to_wstring(tenths / 10) + L"." + std::to_wstring(tenths % 10);
         }
         case Kind::Bool: return *(bool*)f.ptr ? L"1" : L"0";
         case Kind::Text: {

@@ -88,7 +88,7 @@ package, the url, the size and where it will go, and only downloads after a yes.
 The archive is a portable MinGW-w64 (WinLibs). It takes the `.7z` (~104 MB, half
 the size of the `.zip`) whenever the `tar.exe` that ships with Windows is there to
 unpack it, verifies it against the sha256 published next to it, and unpacks it into
-`%LOCALAPPDATA%\cpulytics	oolchain` - **outside the repository**, so cleaning
+`%LOCALAPPDATA%\cpulytics\toolchain` - **outside the repository**, so cleaning
 `build\` or deleting the clone never throws it away, and a second clone reuses it.
 Later builds pick it up silently. Set `CPULYTICS_TOOLCHAIN` to put it elsewhere.
 
@@ -190,8 +190,9 @@ interface speaks English, Spanish, Russian, Chinese, Japanese, Korean and Arabic
 
 The window and the tray menu follow the Windows light and dark setting by default,
 including the title bar and the rounded Windows 11 corners, and switch over as soon
-as the system does. The Theme row overrides that with a fixed dark or light. The application manifest asks for common controls 6 and per monitor
-v2 dpi awareness, so the window is themed and sharp on a scaled display.
+as the system does. The Theme row overrides that with a fixed dark or light. The
+application manifest asks for common controls 6 and per monitor v2 dpi awareness,
+so the window is themed and sharp on a scaled display.
 
 The same values live in `%APPDATA%\cpulytics\config.ini`, written with comments on
 first run - edit it by hand and pick "Reload settings file" in the tray menu.
@@ -217,6 +218,7 @@ first run - edit it by hand and pick "Reload settings file" in the tray menu.
 | `restore_on_exit` | true | | put everything back on shutdown |
 | `log_enabled` | true | | write `cpulytics.log` next to the config |
 | `language` | auto | | auto, en, es, ru, zh, ja, ko, ar |
+| `theme` | system | | system, dark, light |
 | `max_tracked` | 2048 | 64 - 65536 | upper bound on the history map |
 | `log_max_kb` | 512 | 16 - 65536 | log is truncated past this size |
 | `whitelist` | empty | | executables that are never touched |
@@ -313,7 +315,9 @@ first gentle step and nothing more. Set it to 0 to make services untouchable.
 **`fullscreen_max_steps`** - the cap for apps that were ever seen owning a window
 covering a whole monitor: games, video players, presentations. The default 0 means
 immune. The mark sticks to the process for the rest of its life, so alt-tabbing out
-of a game does not silently remove its protection.
+of a game does not silently remove its protection. A maximised window does not
+count, even where an auto-hidden taskbar lets it cover the whole monitor: games
+resize a borderless window, they do not maximise.
 
 ### Behaviour
 
@@ -345,7 +349,8 @@ file.
 
 **`log_enabled`** - writes `cpulytics.log` next to the config: start and stop, every
 change with the old class, the new one and the average that caused it, and every
-process that refused with access denied. If nothing is happening and you expect it
+process that refused with access denied. A step that changes nothing - the process
+already sat at idle - is counted but neither logged nor announced. If nothing is happening and you expect it
 to, this file is the answer: no `demote:` line means no process ever crossed
 `demote_percent` over the whole window, and therefore no balloon either.
 
@@ -387,8 +392,9 @@ kernel and session critical processes (`csrss`, `wininit`, `services`, `lsass`,
 ## About and licence
 
 "About" in the tray menu opens a small window with the version, the author, the
-licence and the same icon the tray shows, themed like the rest of the app. cpulytics is MIT licensed, see [LICENSE](LICENSE) - free to
-use, change and share, with no warranty.
+licence and the same icon the tray shows, themed like the rest of the app.
+cpulytics is MIT licensed, see [LICENSE](LICENSE) - free to use, change and share,
+with no warranty.
 
 ## Tests
 
