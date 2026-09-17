@@ -119,7 +119,9 @@ if ($All) {
         if ($vcvarsall) {
             # host_target is what vcvarsall calls a cross build; x64 on x64 is just x64.
             $pair = if ($hostArch -eq $target) { $target } else { "${hostArch}_${target}" }
-            $line = '"' + $vcvarsall + '" ' + $pair + ' >nul && powershell -NoProfile -ExecutionPolicy Bypass -File "' +
+            # vcvarsall chatters on stderr about a vswhere it cannot find on the PATH
+            # and still succeeds; the toolset check above is what guards the target.
+            $line = '"' + $vcvarsall + '" ' + $pair + ' >nul 2>nul && powershell -NoProfile -ExecutionPolicy Bypass -File "' +
                     $PSCommandPath + '" ' + ($childArgs -join ' ')
             & cmd /c $line
         } else {
