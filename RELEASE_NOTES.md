@@ -1,15 +1,23 @@
-v0.7
+v0.7.1
+
+Fixes
+
+The tray tooltip, the tray menu rows and the log line are built as strings of any length now. They were formatted into fixed size buffers, and an executable with a long enough name wrote past the end of them.
+
+A maximised window no longer counts as fullscreen. With an auto-hidden taskbar a maximised window covers the whole monitor exactly, so every browser or editor that was ever maximised became immune to demotion for the rest of its life, as if it were a game.
+
+A process that already sits at idle is no longer announced again on every cooldown. The step is still counted, but a change that leaves the priority class where it was produces neither a log line nor a balloon.
+
+The log size cap counts what the file already holds when the app starts. Before, every start counted from zero and the file could grow to twice `log_max_kb`.
+
+A decimal setting such as `demote_percent` is rounded to tenths as a whole in the settings window: 7.96 read as 7.10 before, now it reads 8.0.
 
 Improvements
 
-The release assets are the plain executables now, one per architecture and named after it: `cpulytics-v0.7-windows-x64.exe`, `-x86.exe`, `-arm64.exe`. There is nothing to unpack, the binary carries its icon and manifest, needs no runtime and writes its settings to `%APPDATA%\cpulytics` on first run.
-
-The build script takes unix style options: `--arch <x64|x86|arm64>`, `--all`, `--test`, `--run`, `--fetch`, `--help`, with short forms `-a -t -r -f -h`. Without arguments it builds for the architecture the machine runs instead of assuming x64.
-
-`--all` builds every architecture in one go, finding `vcvarsall.bat` itself and opening the matching developer environment for each target. A target whose msvc toolset is not installed is reported and skipped instead of compiling objects for the wrong machine and failing at the link.
+`--all` in the build script no longer prints the complaint of `vcvarsall.bat` about a `vswhere.exe` it cannot find on the PATH; the build was never affected by it.
 
 Docs
 
-The licence carries the contact address, and the build section of the readme lists the options, the components needed and what to do when a build fails.
+The readme lists the `theme` setting in the settings table and gives the toolchain folder `%LOCALAPPDATA%\cpulytics\toolchain` its lost backslash.
 
-Full Changelog: v0.6...v0.7
+Full Changelog: v0.7...v0.7.1
