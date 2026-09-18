@@ -22,6 +22,7 @@ void Engine::set_config(const Config& cfg) {
 }
 
 bool Engine::whitelisted(const std::wstring& name) const {
+    if (cfg_.whitelist.empty()) return false;  // the usual case, no copy per process per tick
     const std::wstring n = lower(name);
     for (const auto& w : cfg_.whitelist)
         if (w == n) return true;

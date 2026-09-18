@@ -74,8 +74,10 @@ public:
         std::error_code ec;
         if (!out_.is_open()) {
             const auto sz = std::filesystem::file_size(p, ec);
-            out_.open(p, (!ec && sz > max_bytes_) ? std::ios::trunc : std::ios::app);
+            const bool fresh = ec || sz > max_bytes_;
+            out_.open(p, fresh ? std::ios::trunc : std::ios::app);
             if (!out_) return;
+            written_ = fresh ? 0 : sz;  // the cap counts what is already there
         }
         SYSTEMTIME t;
         GetLocalTime(&t);
@@ -318,15 +320,18 @@ void App::apply(const Action& a, std::wstring& summary, int& count) {
     }
     engine_->applied(a.pid, a.to_step, orig);
 
-    wchar_t line[256];
-    wsprintfW(line, L"%s: %s (pid %u) %s -> %s at %u%% avg", demote ? L"demote" : L"restore", a.name.c_str(), a.pid,
-              sys::class_name(sys::class_for_step(orig, a.from_step)), sys::class_name(sys::class_for_step(orig, a.to_step)),
-              (unsigned)(a.percent + 0.5));
-    log_.write(line);
+    // A process that already sat at idle takes the step without moving: the
+    // engine still needs to count it, the user does not need a balloon about it.
+    const uint32_t from = sys::class_for_step(orig, a.from_step), to = sys::class_for_step(orig, a.to_step);
+    if (from == to) return;
+
+    const std::wstring pct = std::to_wstring((unsigned)(a.percent + 0.5));
+    log_.write((demote ? L"demote: " : L"restore: ") + a.name + L" (pid " + std::to_wstring(a.pid) + L") " +
+               sys::class_name(from) + L" -> " + sys::class_name(to) + L" at " + pct + L"% avg");
     if (++count <= 3) {
         summary += a.name;
         summary += demote ? L" -> " : L" back to ";
-        summary += sys::class_name(sys::class_for_step(orig, a.to_step));
+        summary += sys::class_name(to);
         summary += L"\n";
     }
 }
@@ -358,11 +363,9 @@ void App::set_tip() {
     const auto top = engine_->top(1);
     std::wstring tip = L"cpulytics";
     if (!cfg_.enabled) tip += std::wstring(L" (") + tr(S_PAUSED) + L")";
-    if (!top.empty()) {
-        wchar_t buf[96];
-        wsprintfW(buf, L"\n%s: %s %u%%", tr(S_TOP), top[0].name.c_str(), (unsigned)(top[0].percent + 0.5));
-        tip += buf;
-    }
+    if (!top.empty())
+        tip += L"\n" + std::wstring(tr(S_TOP)) + L": " + top[0].name + L" " +
+               std::to_wstring((unsigned)(top[0].percent + 0.5)) + L"%";
     nid_.uFlags = NIF_TIP;
     lstrcpynW(nid_.szTip, tip.c_str(), ARRAYSIZE(nid_.szTip));
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
@@ -385,11 +388,11 @@ void App::show_menu() {
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, header.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     for (const Usage& u : engine_->top(kTopRows)) {
-        wchar_t row[160];
         const wchar_t* tag = u.step ? (u.step > 1 ? tr(S_TAG_IDLE) : tr(S_TAG_LOWERED))
                                     : (engine_->is_fullscreen(u.pid) ? tr(S_TAG_FULLSCREEN) : nullptr);
-        wsprintfW(row, tag ? L"%s  %u%%  [%s]" : L"%s  %u%%", u.name.c_str(), (unsigned)(u.percent + 0.5), tag);
-        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, row);
+        std::wstring row = u.name + L"  " + std::to_wstring((unsigned)(u.percent + 0.5)) + L"%";
+        if (tag) row += L"  [" + std::wstring(tag) + L"]";
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, row.c_str());
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (cfg_.enabled ? MF_CHECKED : 0), kIdEnabled, tr(S_MENU_MANAGING));
